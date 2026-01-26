@@ -265,6 +265,135 @@ export class GmailClient {
   }
 
   /**
+   * Send an email
+   * @param to - Recipient email address(es) - can be string or array
+   * @param subject - Email subject
+   * @param body - Email body (plain text or HTML)
+   * @param options - Additional options (cc, bcc, replyTo, etc.)
+   */
+  async sendEmail(
+    to: string | string[],
+    subject: string,
+    body: string,
+    options?: {
+      cc?: string | string[]
+      bcc?: string | string[]
+      replyTo?: string
+      html?: boolean
+    }
+  ): Promise<string> {
+    try {
+      const toAddresses = Array.isArray(to) ? to.join(', ') : to
+      const ccAddresses = options?.cc ? (Array.isArray(options.cc) ? options.cc.join(', ') : options.cc) : ''
+      const bccAddresses = options?.bcc ? (Array.isArray(options.bcc) ? options.bcc.join(', ') : options.bcc) : ''
+      const replyTo = options?.replyTo || ''
+
+      // Get user's email for the From field
+      const fromEmail = await this.getUserEmail()
+
+      // Create email message in RFC 2822 format
+      const messageParts = [
+        `To: ${toAddresses}`,
+        ccAddresses ? `Cc: ${ccAddresses}` : '',
+        bccAddresses ? `Bcc: ${bccAddresses}` : '',
+        replyTo ? `Reply-To: ${replyTo}` : '',
+        `Subject: ${subject}`,
+        options?.html ? 'Content-Type: text/html; charset=utf-8' : 'Content-Type: text/plain; charset=utf-8',
+        '',
+        body,
+      ].filter(Boolean).join('\n')
+
+      // Encode message in base64url format (Gmail API requirement)
+      const encodedMessage = Buffer.from(messageParts)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '')
+
+      const response = await this.gmail.users.messages.send({
+        userId: 'me',
+        requestBody: {
+          raw: encodedMessage,
+        },
+      })
+
+      return response.data.id || ''
+    } catch (error: any) {
+      console.error('Error sending email:', error)
+      throw new Error(`Failed to send email: ${error.message}`)
+    }
+  }
+
+  /**
+   * Reply to an email
+   * @param messageId - ID of the message to reply to
+   * @param body - Reply body
+   * @param options - Additional options
+   */
+  async replyToEmail(
+    messageId: string,
+    body: string,
+    options?: {
+      html?: boolean
+    }
+  ): Promise<string> {
+    try {
+      // Get the original message
+      const originalMessage = await this.gmail.users.messages.get({
+        userId: 'me',
+        id: messageId,
+        format: 'full',
+      })
+
+      const headers = originalMessage.data.payload?.headers || []
+      const getHeader = (name: string) =>
+        headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || ''
+
+      const originalSubject = getHeader('Subject')
+      const originalFrom = getHeader('From')
+      const replyTo = getHeader('Reply-To') || originalFrom
+
+      // Remove "Re:" prefix if already present and add it
+      const subject = originalSubject.startsWith('Re:') 
+        ? originalSubject 
+        : `Re: ${originalSubject}`
+
+      // Get user's email
+      const fromEmail = await this.getUserEmail()
+
+      // Create reply message
+      const messageParts = [
+        `To: ${replyTo}`,
+        `Subject: ${subject}`,
+        `In-Reply-To: ${originalMessage.data.id}`,
+        `References: ${originalMessage.data.id}`,
+        options?.html ? 'Content-Type: text/html; charset=utf-8' : 'Content-Type: text/plain; charset=utf-8',
+        '',
+        body,
+      ].filter(Boolean).join('\n')
+
+      const encodedMessage = Buffer.from(messageParts)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '')
+
+      const response = await this.gmail.users.messages.send({
+        userId: 'me',
+        requestBody: {
+          raw: encodedMessage,
+          threadId: originalMessage.data.threadId,
+        },
+      })
+
+      return response.data.id || ''
+    } catch (error: any) {
+      console.error('Error replying to email:', error)
+      throw new Error(`Failed to reply to email: ${error.message}`)
+    }
+  }
+
+  /**
    * Format Gmail message for vault storage
    */
   formatMessageForVault(message: any): string {
@@ -322,6 +451,8 @@ export function getGmailAuthUrl(): string {
 
   const scopes = [
     'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/gmail.compose',
   ]
 
   return oauth2Client.generateAuthUrl({

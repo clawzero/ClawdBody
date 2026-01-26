@@ -108,6 +108,16 @@ export class OrgoClient {
   }
 
   /**
+   * Create a new project
+   */
+  async createProject(name: string): Promise<OrgoProject> {
+    return this.request<OrgoProject>('/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
+  }
+
+  /**
    * Create a new computer (VM) within a project
    * Uses POST /computers with project_id in the body
    */

@@ -69,9 +69,11 @@ model SetupState {
 
   // API Keys (encrypted in production)
   claudeApiKey String?
+  orgoApiKey   String?
 
   // Orgo VM info
   orgoProjectId   String?
+  orgoProjectName String?
   orgoComputerId  String?
   orgoComputerUrl String?
   vmStatus        String? // creating, starting, running, stopped

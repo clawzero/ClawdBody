@@ -155,6 +155,165 @@ export class CalendarClient {
   }
 
   /**
+   * Create a calendar event
+   * @param summary - Event title
+   * @param start - Start date/time (ISO string or Date object)
+   * @param end - End date/time (ISO string or Date object)
+   * @param options - Additional event options
+   */
+  async createEvent(
+    summary: string,
+    start: string | Date,
+    end: string | Date,
+    options?: {
+      description?: string
+      location?: string
+      attendees?: string[]
+      reminders?: { method: 'email' | 'popup'; minutes: number }[]
+      timeZone?: string
+    }
+  ): Promise<any> {
+    try {
+      const startDateTime = typeof start === 'string' ? start : start.toISOString()
+      const endDateTime = typeof end === 'string' ? end : end.toISOString()
+
+      const event: any = {
+        summary,
+        start: {
+          dateTime: startDateTime,
+          timeZone: options?.timeZone || 'UTC',
+        },
+        end: {
+          dateTime: endDateTime,
+          timeZone: options?.timeZone || 'UTC',
+        },
+      }
+
+      if (options?.description) {
+        event.description = options.description
+      }
+
+      if (options?.location) {
+        event.location = options.location
+      }
+
+      if (options?.attendees && options.attendees.length > 0) {
+        event.attendees = options.attendees.map(email => ({ email }))
+      }
+
+      if (options?.reminders && options.reminders.length > 0) {
+        event.reminders = {
+          useDefault: false,
+          overrides: options.reminders.map(r => ({
+            method: r.method,
+            minutes: r.minutes,
+          })),
+        }
+      }
+
+      const response = await this.calendar.events.insert({
+        calendarId: 'primary',
+        requestBody: event,
+      })
+
+      return response.data
+    } catch (error: any) {
+      console.error('Error creating calendar event:', error)
+      throw new Error(`Failed to create calendar event: ${error.message}`)
+    }
+  }
+
+  /**
+   * Update an existing calendar event
+   * @param eventId - ID of the event to update
+   * @param updates - Fields to update
+   */
+  async updateEvent(
+    eventId: string,
+    updates: {
+      summary?: string
+      start?: string | Date
+      end?: string | Date
+      description?: string
+      location?: string
+      attendees?: string[]
+    }
+  ): Promise<any> {
+    try {
+      // First, get the existing event
+      const existingEvent = await this.calendar.events.get({
+        calendarId: 'primary',
+        eventId,
+      })
+
+      const event: any = { ...existingEvent.data }
+
+      if (updates.summary !== undefined) {
+        event.summary = updates.summary
+      }
+
+      if (updates.start !== undefined) {
+        const startDateTime = typeof updates.start === 'string' 
+          ? updates.start 
+          : updates.start.toISOString()
+        event.start = {
+          dateTime: startDateTime,
+          timeZone: existingEvent.data.start?.timeZone || 'UTC',
+        }
+      }
+
+      if (updates.end !== undefined) {
+        const endDateTime = typeof updates.end === 'string' 
+          ? updates.end 
+          : updates.end.toISOString()
+        event.end = {
+          dateTime: endDateTime,
+          timeZone: existingEvent.data.end?.timeZone || 'UTC',
+        }
+      }
+
+      if (updates.description !== undefined) {
+        event.description = updates.description
+      }
+
+      if (updates.location !== undefined) {
+        event.location = updates.location
+      }
+
+      if (updates.attendees !== undefined) {
+        event.attendees = updates.attendees.map(email => ({ email }))
+      }
+
+      const response = await this.calendar.events.update({
+        calendarId: 'primary',
+        eventId,
+        requestBody: event,
+      })
+
+      return response.data
+    } catch (error: any) {
+      console.error('Error updating calendar event:', error)
+      throw new Error(`Failed to update calendar event: ${error.message}`)
+    }
+  }
+
+  /**
+   * Delete a calendar event
+   * @param eventId - ID of the event to delete
+   */
+  async deleteEvent(eventId: string): Promise<void> {
+    try {
+      await this.calendar.events.delete({
+        calendarId: 'primary',
+        eventId,
+      })
+    } catch (error: any) {
+      console.error('Error deleting calendar event:', error)
+      throw new Error(`Failed to delete calendar event: ${error.message}`)
+    }
+  }
+
+  /**
    * Format calendar event for vault storage
    */
   formatEventForVault(event: any): string {
@@ -219,6 +378,7 @@ export function getCalendarAuthUrl(): string {
 
   const scopes = [
     'https://www.googleapis.com/auth/calendar.readonly',
+    'https://www.googleapis.com/auth/calendar.events',
   ]
 
   return oauth2Client.generateAuthUrl({

@@ -586,13 +586,17 @@ echo "INSTALL_COMPLETE" >> /tmp/clawdbot-install.log
     telegramUserId?: string
     clawdbotVersion?: string
     heartbeatIntervalMinutes?: number
+    userId?: string
+    apiBaseUrl?: string
   }): Promise<boolean> {
     const {
       claudeApiKey,
       telegramBotToken,
       telegramUserId,
       clawdbotVersion = '2026.1.22',
-      heartbeatIntervalMinutes = 30
+      heartbeatIntervalMinutes = 30,
+      userId,
+      apiBaseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
     } = options
 
     // Create directories
@@ -611,7 +615,7 @@ echo "INSTALL_COMPLETE" >> /tmp/clawdbot-install.log
     // Create CLAUDE.md file in workspace for system prompt (Clawdbot reads this automatically)
     const claudeMdContent = `# Samantha - Autonomous AI Assistant
 
-You are Samantha, an autonomous AI assistant with access to a knowledge repository.
+You are Samantha, an autonomous AI assistant with access to a knowledge repository and communication capabilities.
 
 Your workspace is at /home/user/clawd.
 
@@ -621,11 +625,41 @@ Your workspace is at /home/user/clawd.
 
 The vault contains your primary knowledge base including tasks, notes, projects, and context about what needs to be done.
 
+## Communication Capabilities
+
+You have access to Gmail and Calendar integrations that are already set up. You can use them without needing to configure OAuth again.
+
+### Sending Emails
+Use the \`send_communication\` command to send emails:
+\`\`\`bash
+send_communication send_email --to "recipient@example.com" --subject "Subject" --body "Message body"
+\`\`\`
+
+### Replying to Emails
+Use the \`send_communication\` command to reply:
+\`\`\`bash
+send_communication reply_email --message-id "MESSAGE_ID" --body "Reply message"
+\`\`\`
+
+### Creating Calendar Events
+Use the \`send_communication\` command to create events:
+\`\`\`bash
+send_communication create_event --summary "Meeting" --start "2024-01-15T10:00:00Z" --end "2024-01-15T11:00:00Z" --description "Meeting description"
+\`\`\`
+
+The communication API endpoint is available at: ${apiBaseUrl}/api/integrations/clawdbot-communication
+
+Use the \`send_communication\` helper script to interact with the API:
+\`\`\`bash
+/home/user/clawd/send_communication.sh send_email --to "email@example.com" --subject "Subject" --body "Body"
+\`\`\`
+
 ## Behavior
 
 **When receiving user messages:**
 - Prioritize and execute user-requested tasks immediately
 - Be helpful, proactive, and thorough
+- Use communication tools when the user asks you to send emails, schedule meetings, etc.
 
 **During heartbeat (periodic check):**
 1. Check /home/user/clawd/knowledge/vault for updates (look at recently modified files)
@@ -748,6 +782,58 @@ During heartbeat, check the following:
       return false
     }
 
+    // Create helper script for communication API
+    const helperScript = '#!/bin/bash\n' +
+      '# Communication API helper for Clawdbot\n' +
+      '# Usage: send_communication.sh <action> [options]\n' +
+      '\n' +
+      `API_URL="${apiBaseUrl}/api/integrations/clawdbot-communication"\n` +
+      `USER_ID="${userId || ''}"\n` +
+      `GATEWAY_TOKEN="${gatewayToken}"\n` +
+      '\n' +
+      'if [ -z "$USER_ID" ]; then\n' +
+      '  echo "Error: User ID not configured" >&2\n' +
+      '  exit 1\n' +
+      'fi\n' +
+      '\n' +
+      'ACTION="$1"\n' +
+      'shift\n' +
+      '\n' +
+      '# Build JSON payload from arguments\n' +
+      'JSON_ARGS=""\n' +
+      'while [ $# -gt 0 ]; do\n' +
+      '  KEY="$1"\n' +
+      '  shift\n' +
+      '  if [[ "$KEY" == --* ]]; then\n' +
+      '    KEY="${KEY#--}"\n' +
+      '    VALUE="$1"\n' +
+      '    shift\n' +
+      '    if [ -z "$JSON_ARGS" ]; then\n' +
+      '      JSON_ARGS="\\"$KEY\\": \\"$VALUE\\""\n' +
+      '    else\n' +
+      '      JSON_ARGS="$JSON_ARGS, \\"$KEY\\": \\"$VALUE\\""\n' +
+      '    fi\n' +
+      '  fi\n' +
+      'done\n' +
+      '\n' +
+      '# Create JSON payload\n' +
+      'PAYLOAD="{\\"action\\": \\"$ACTION\\", \\"gatewayToken\\": \\"$GATEWAY_TOKEN\\", \\"userId\\": \\"$USER_ID\\""\n' +
+      'if [ -n "$JSON_ARGS" ]; then\n' +
+      '  PAYLOAD="$PAYLOAD, $JSON_ARGS"\n' +
+      'fi\n' +
+      'PAYLOAD="$PAYLOAD}"\n' +
+      '\n' +
+      '# Make API request\n' +
+      `curl -s -X POST "$API_URL" \\\n` +
+      '  -H "Content-Type: application/json" \\\n' +
+      '  -d "$PAYLOAD"\n'
+
+    const helperScriptB64 = Buffer.from(helperScript).toString('base64')
+    await this.runCommand(
+      `echo '${helperScriptB64}' | base64 -d > /home/user/clawd/send_communication.sh && chmod +x /home/user/clawd/send_communication.sh`,
+      'Create communication helper script'
+    )
+
     // Add environment variables to bashrc
     const bashrcAdditions = `
 # Clawdbot configuration
@@ -755,6 +841,9 @@ export NVM_DIR="\\$HOME/.nvm"
 [ -s "\\$NVM_DIR/nvm.sh" ] && . "\\$NVM_DIR/nvm.sh"
 export ANTHROPIC_API_KEY='${claudeApiKey}'
 export TELEGRAM_BOT_TOKEN='${telegramBotToken}'
+export SAMANTHA_API_URL='${apiBaseUrl}'
+export SAMANTHA_USER_ID='${userId || ''}'
+export SAMANTHA_GATEWAY_TOKEN='${gatewayToken}'
 `
 
     await this.runCommand(

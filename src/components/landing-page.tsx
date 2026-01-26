@@ -52,6 +52,15 @@ export function LandingPage() {
             AI that actually knows you and execute tasks
           </motion.h1>
 
+          <motion.h2
+            className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6 bg-gradient-to-r from-rose-400 via-rose-300 to-teal-400 bg-clip-text text-transparent"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25, duration: 0.6 }}
+          >
+            Automate your life and your business
+          </motion.h2>
+
           <motion.p
             className="text-lg sm:text-xl text-gray-400 mb-10 max-w-2xl mx-auto"
             initial={{ opacity: 0, y: 20 }}

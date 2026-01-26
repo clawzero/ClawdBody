@@ -558,9 +558,6 @@ export default function LearningSourcesPage() {
               <h1 className="text-4xl md:text-5xl font-display font-bold mb-4 text-sam-text leading-tight">Setup VM</h1>
               <div className="p-8 rounded-2xl border border-sam-border bg-sam-surface/50 backdrop-blur">
                 <h2 className="text-2xl font-display font-bold mb-2">Enter your API Keys</h2>
-              <p className="text-sam-text-dim mb-8">
-                Your keys are encrypted and stored locally. We never access or store your credentials. They remain private to you.
-              </p>
 
               {setupError && (
                 <motion.div
@@ -670,7 +667,7 @@ export default function LearningSourcesPage() {
             Connect your sources
           </h1>
           <p className="text-lg text-sam-text-dim max-w-3xl font-body leading-relaxed">
-          Each source becomes structured context the AI agent uses to infer and execute tasks. Your private data lives securely in a private GitHub repository.
+          Each source becomes structured context the AI agent uses to infer and execute tasks. Your private data lives securely in your private GitHub repository.
           </p>
         </motion.div>
 
@@ -750,7 +747,7 @@ export default function LearningSourcesPage() {
                 className="mt-6 text-center"
               >
                 <p className="text-xs text-sam-text-dim/80 font-body leading-relaxed max-w-3xl mx-auto">
-                  <span className="font-semibold text-sam-text-dim">Privacy:</span> We don't store your data on our servers or in the cloud. All your data belongs to you and is stored in your private GitHub repository vault, synced to your VM. Your memories, tasks, and context remain completely private and under your control.
+                  <span className="font-semibold text-sam-text-dim">Privacy:</span> We don't store your data on our servers or in the cloud. All your data belongs to you and is stored in your private GitHub repository, synced to your VM. Your memories, tasks, and context remain completely private and under your control.
                 </p>
               </motion.div>
             </>

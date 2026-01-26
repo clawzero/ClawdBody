@@ -7,8 +7,6 @@ import { GitHubClient } from '@/lib/github'
 import { VMSetup } from '@/lib/vm-setup'
 import type { SetupState } from '@prisma/client'
 
-const PROJECT_NAME = 'claude-code'
-
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
@@ -23,16 +21,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Claude API key is required' }, { status: 400 })
     }
 
-    // Use Orgo API key from environment variable
-    const orgoApiKey = process.env.ORGO_API_KEY
-    if (!orgoApiKey) {
-      return NextResponse.json({ error: 'Orgo API key not configured on server' }, { status: 500 })
-    }
-
-    // Get or create setup state
+    // Get existing setup state to retrieve user's Orgo API key
     let setupState = await prisma.setupState.findUnique({
       where: { userId: session.user.id },
     })
+
+    // Use user's Orgo API key from setup state
+    const orgoApiKey = setupState?.orgoApiKey
+    if (!orgoApiKey) {
+      return NextResponse.json({ 
+        error: 'Orgo API key not configured. Please go back and configure your Orgo API key.' 
+      }, { status: 400 })
+    }
+
+    // Use user's selected project name or default
+    const projectName = setupState?.orgoProjectName || 'claude-brain'
 
     if (!setupState) {
       setupState = await prisma.setupState.create({
@@ -59,7 +62,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Start async setup process
-    runSetupProcess(session.user.id, claudeApiKey, orgoApiKey, telegramBotToken, telegramUserId).catch(console.error)
+    runSetupProcess(session.user.id, claudeApiKey, orgoApiKey, projectName, telegramBotToken, telegramUserId).catch(console.error)
 
     return NextResponse.json({ 
       success: true, 
@@ -80,6 +83,7 @@ async function runSetupProcess(
   userId: string, 
   claudeApiKey: string, 
   orgoApiKey: string,
+  projectName: string,
   telegramBotToken?: string,
   telegramUserId?: string
 ) {
@@ -126,20 +130,32 @@ async function runSetupProcess(
     const orgoClient = new OrgoClient(orgoApiKey)
 
     // 1. Create Orgo project and VM
-    console.log('Creating Orgo project and VM...')
+    console.log(`Creating Orgo project and VM in project "${projectName}"...`)
     await updateStatus({ status: 'provisioning' })
 
-    // First, find the project by name to get its ID
+    // First, find the project by name to get its ID, or create if it doesn't exist
     const projects = await orgoClient.listProjects()
-    const project = projects.find(p => p.name === PROJECT_NAME)
+    let project = projects.find(p => p.name === projectName)
+    
     if (!project) {
-      throw new Error(`Project "${PROJECT_NAME}" not found. Please create it in the Orgo dashboard first.`)
+      // Project doesn't exist - create it
+      console.log(`Project "${projectName}" not found, creating...`)
+      try {
+        project = await orgoClient.createProject(projectName)
+        console.log(`Created project "${projectName}" with ID: ${project.id}`)
+      } catch (createErr: any) {
+        // If project creation fails, it might be because the API doesn't support explicit creation
+        // In that case, some APIs create projects implicitly - we'll try with an empty ID
+        console.warn(`Could not create project explicitly: ${createErr.message}. Trying implicit creation...`)
+        project = { id: '', name: projectName }
+      }
     }
     
-    await updateStatus({ orgoProjectId: project.id })
+    await updateStatus({ orgoProjectId: project.id || '' })
 
     const computerName = generateComputerName()
     // Create computer using project ID (POST /computers with project_id in body)
+    // If project.id is empty, we might need to create the project first via the computer creation
     // Retry logic for computer creation (may timeout but still succeed)
     let computer: any
     let retries = 3
@@ -147,11 +163,25 @@ async function runSetupProcess(
     
     while (retries > 0) {
       try {
-        computer = await orgoClient.createComputer(project.id, computerName, {
+        // If project ID is empty, try using project name instead (some APIs support this)
+        const projectIdOrName = project.id || project.name
+        computer = await orgoClient.createComputer(projectIdOrName, computerName, {
           os: 'linux',
           ram: 8,
           cpu: 2,
         })
+        
+        // If we didn't have a project ID, update it from the created computer's project info
+        if (!project.id && computer.project_name) {
+          // Try to get the updated project list to find the ID
+          const updatedProjects = await orgoClient.listProjects()
+          const createdProject = updatedProjects.find(p => p.name === computer.project_name || p.name === projectName)
+          if (createdProject) {
+            project = createdProject
+            await updateStatus({ orgoProjectId: createdProject.id })
+          }
+        }
+        
         break // Success, exit retry loop
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error))
@@ -163,7 +193,7 @@ async function runSetupProcess(
           try {
             // Wait a bit and check if computer exists
             await new Promise(resolve => setTimeout(resolve, 5000))
-            const computers = await orgoClient.listComputers(project.name)
+            const computers = await orgoClient.listComputers(project.name || projectName)
             const existingComputer = computers.find(c => c.name === computerName)
             if (existingComputer) {
               console.log('Computer was created despite timeout!')
@@ -329,6 +359,8 @@ async function runSetupProcess(
         telegramUserId: finalTelegramUserId,
         clawdbotVersion: clawdbotResult.version,
         heartbeatIntervalMinutes: 30,
+        userId,
+        apiBaseUrl: process.env.NEXTAUTH_URL || 'http://localhost:3000',
       })
       await updateStatus({ telegramConfigured: telegramSuccess })
 

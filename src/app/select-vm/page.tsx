@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { motion } from 'framer-motion'
-import { Loader2, ArrowRight, CheckCircle2, LogOut } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Loader2, ArrowRight, CheckCircle2, LogOut, X, Key, FolderPlus, AlertCircle, ExternalLink } from 'lucide-react'
 
 type VMProvider = 'orgo' | 'e2b' | 'flyio' | 'aws' | 'railway' | 'digitalocean' | 'hetzner' | 'modal'
 
@@ -16,6 +16,11 @@ interface VMOption {
   available: boolean
   comingSoon?: boolean
   url: string
+}
+
+interface OrgoProject {
+  id: string
+  name: string
 }
 
 const vmOptions: VMOption[] = [
@@ -99,6 +104,18 @@ export default function SelectVMPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Orgo configuration modal state
+  const [showOrgoModal, setShowOrgoModal] = useState(false)
+  const [orgoApiKey, setOrgoApiKey] = useState('')
+  const [isValidatingKey, setIsValidatingKey] = useState(false)
+  const [keyValidated, setKeyValidated] = useState(false)
+  const [orgoProjects, setOrgoProjects] = useState<OrgoProject[]>([])
+  const [selectedProject, setSelectedProject] = useState<OrgoProject | null>(null)
+  const [showCreateProject, setShowCreateProject] = useState(false)
+  const [newProjectName, setNewProjectName] = useState('claude-brain')
+  const [isCreatingProject, setIsCreatingProject] = useState(false)
+  const [orgoError, setOrgoError] = useState<string | null>(null)
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/')
@@ -120,20 +137,139 @@ export default function SelectVMPage() {
     return null
   }
 
-  const handleSelect = async (provider: VMProvider) => {
+  const handleProviderClick = (provider: VMProvider) => {
     if (!vmOptions.find(opt => opt.id === provider)?.available) {
       return // Don't allow selection of unavailable options
     }
 
-    setSelectedProvider(provider)
-    setError(null)
+    if (provider === 'orgo') {
+      // Show Orgo configuration modal
+      setShowOrgoModal(true)
+      setOrgoError(null)
+    }
+  }
+
+  const handleValidateApiKey = async () => {
+    if (!orgoApiKey.trim()) {
+      setOrgoError('Please enter your Orgo API key')
+      return
+    }
+
+    setIsValidatingKey(true)
+    setOrgoError(null)
+
+    try {
+      const res = await fetch('/api/setup/orgo/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: orgoApiKey.trim() }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to validate API key')
+      }
+
+      setKeyValidated(true)
+      setOrgoProjects(data.projects || [])
+      
+      // If no projects exist, show create project form
+      if (!data.hasProjects) {
+        setShowCreateProject(true)
+      }
+    } catch (e) {
+      setOrgoError(e instanceof Error ? e.message : 'Failed to validate API key')
+    } finally {
+      setIsValidatingKey(false)
+    }
+  }
+
+  const handleCreateProject = async () => {
+    if (!newProjectName.trim()) {
+      setOrgoError('Please enter a project name')
+      return
+    }
+
+    setIsCreatingProject(true)
+    setOrgoError(null)
+
+    try {
+      const res = await fetch('/api/setup/orgo/create-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectName: newProjectName.trim() }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to create project')
+      }
+
+      // Select the newly created project
+      setSelectedProject(data.project)
+      setShowCreateProject(false)
+      
+      // If the project was created, add it to the list
+      if (data.project.id) {
+        setOrgoProjects(prev => [...prev, data.project])
+      }
+    } catch (e) {
+      setOrgoError(e instanceof Error ? e.message : 'Failed to create project')
+    } finally {
+      setIsCreatingProject(false)
+    }
+  }
+
+  const handleSelectProject = async (project: OrgoProject) => {
+    setSelectedProject(project)
+    setOrgoError(null)
+
+    try {
+      const res = await fetch('/api/setup/orgo/select-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: project.id, projectName: project.name }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to select project')
+      }
+    } catch (e) {
+      setOrgoError(e instanceof Error ? e.message : 'Failed to select project')
+      setSelectedProject(null)
+    }
+  }
+
+  const handleOrgoConfirm = async () => {
+    if (!keyValidated) {
+      setOrgoError('Please validate your API key first')
+      return
+    }
+
+    // If there are no projects and we're showing create project form,
+    // the user needs to either create a project or select one
+    if (orgoProjects.length === 0 && !selectedProject) {
+      // Auto-create the project with the default name
+      await handleCreateProject()
+      if (orgoError) return
+    }
+
+    if (!selectedProject && orgoProjects.length > 0) {
+      setOrgoError('Please select a project')
+      return
+    }
+
     setIsSubmitting(true)
+    setError(null)
 
     try {
       const res = await fetch('/api/setup/select-vm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vmProvider: provider }),
+        body: JSON.stringify({ vmProvider: 'orgo' }),
       })
 
       if (!res.ok) {
@@ -141,13 +277,26 @@ export default function SelectVMPage() {
         throw new Error(data.error || 'Failed to save VM provider selection')
       }
 
+      setSelectedProvider('orgo')
+      setShowOrgoModal(false)
+      
       // Redirect to learning sources page
       router.push('/learning-sources')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
       setIsSubmitting(false)
-      setSelectedProvider(null)
     }
+  }
+
+  const closeOrgoModal = () => {
+    setShowOrgoModal(false)
+    setOrgoApiKey('')
+    setKeyValidated(false)
+    setOrgoProjects([])
+    setSelectedProject(null)
+    setShowCreateProject(false)
+    setNewProjectName('claude-brain')
+    setOrgoError(null)
   }
 
   return (
@@ -219,7 +368,7 @@ export default function SelectVMPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.1 * index }}
-                onClick={() => handleSelect(option.id)}
+                onClick={() => handleProviderClick(option.id)}
                 disabled={isDisabled}
                 className={`relative p-5 rounded-xl border transition-all duration-300 text-left ${
                   isSelected
@@ -300,6 +449,242 @@ export default function SelectVMPage() {
           </motion.div>
         )}
       </div>
+
+      {/* Orgo Configuration Modal */}
+      <AnimatePresence>
+        {showOrgoModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={closeOrgoModal}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ duration: 0.2 }}
+              className="bg-sam-surface border border-sam-border rounded-2xl w-full max-w-lg overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-6 border-b border-sam-border">
+                <div className="flex items-center gap-3">
+                  <img src="/logos/orgo.png" alt="Orgo" className="w-8 h-8 object-contain" />
+                  <h2 className="text-xl font-display font-semibold text-sam-text">Configure Orgo</h2>
+                </div>
+                <button
+                  onClick={closeOrgoModal}
+                  className="p-2 rounded-lg hover:bg-sam-bg transition-colors text-sam-text-dim hover:text-sam-text"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-6">
+                {/* Error Display */}
+                {orgoError && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="p-3 rounded-lg bg-sam-error/10 border border-sam-error/30 flex items-start gap-2"
+                  >
+                    <AlertCircle className="w-4 h-4 text-sam-error flex-shrink-0 mt-0.5" />
+                    <p className="text-sam-error text-sm">{orgoError}</p>
+                  </motion.div>
+                )}
+
+                {/* Step 1: API Key */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-sam-text flex items-center gap-2">
+                      <Key className="w-4 h-4 text-sam-accent" />
+                      Orgo API Key
+                      <span className="text-sam-error">*</span>
+                    </label>
+                    <a
+                      href="https://www.orgo.ai/start"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-sam-accent hover:text-sam-accent/80 flex items-center gap-1"
+                    >
+                      Get API key <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={orgoApiKey}
+                      onChange={(e) => {
+                        setOrgoApiKey(e.target.value)
+                        setKeyValidated(false)
+                        setOrgoProjects([])
+                        setSelectedProject(null)
+                      }}
+                      placeholder="Enter your Orgo API key"
+                      disabled={keyValidated}
+                      className={`flex-1 px-4 py-2.5 rounded-lg bg-sam-bg border transition-all text-sam-text placeholder:text-sam-text-dim/50 font-mono text-sm ${
+                        keyValidated
+                          ? 'border-green-500/50 bg-green-500/5'
+                          : 'border-sam-border focus:border-sam-accent focus:ring-1 focus:ring-sam-accent/30'
+                      }`}
+                    />
+                    {!keyValidated ? (
+                      <button
+                        onClick={handleValidateApiKey}
+                        disabled={isValidatingKey || !orgoApiKey.trim()}
+                        className="px-4 py-2.5 rounded-lg bg-sam-accent text-sam-bg font-medium text-sm hover:bg-sam-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        {isValidatingKey ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Validating
+                          </>
+                        ) : (
+                          'Validate'
+                        )}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setKeyValidated(false)
+                          setOrgoApiKey('')
+                          setOrgoProjects([])
+                          setSelectedProject(null)
+                          setShowCreateProject(false)
+                        }}
+                        className="px-4 py-2.5 rounded-lg border border-sam-border text-sam-text-dim hover:text-sam-text hover:border-sam-accent/50 font-medium text-sm transition-colors flex items-center gap-2"
+                      >
+                        Change
+                      </button>
+                    )}
+                  </div>
+                  {keyValidated && (
+                    <p className="text-xs text-green-400 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> API key validated successfully
+                    </p>
+                  )}
+                </div>
+
+                {/* Step 2: Project Selection (only show after key is validated) */}
+                {keyValidated && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-3"
+                  >
+                    <label className="text-sm font-medium text-sam-text flex items-center gap-2">
+                      <FolderPlus className="w-4 h-4 text-sam-accent" />
+                      Select Project
+                      <span className="text-sam-error">*</span>
+                    </label>
+
+                    {orgoProjects.length > 0 && !showCreateProject ? (
+                      <>
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {orgoProjects.map((project) => (
+                            <button
+                              key={project.id}
+                              onClick={() => handleSelectProject(project)}
+                              className={`w-full p-3 rounded-lg border text-left transition-all ${
+                                selectedProject?.id === project.id
+                                  ? 'border-sam-accent bg-sam-accent/10'
+                                  : 'border-sam-border hover:border-sam-accent/50 hover:bg-sam-bg'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-sam-text font-medium">{project.name}</span>
+                                {selectedProject?.id === project.id && (
+                                  <CheckCircle2 className="w-4 h-4 text-sam-accent" />
+                                )}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => setShowCreateProject(true)}
+                          className="text-sm text-sam-accent hover:text-sam-accent/80 flex items-center gap-1"
+                        >
+                          <FolderPlus className="w-3 h-3" />
+                          Create new project
+                        </button>
+                      </>
+                    ) : (
+                      <div className="space-y-3">
+                        {orgoProjects.length === 0 && (
+                          <p className="text-sm text-sam-text-dim">
+                            No projects found. Let's create your first project:
+                          </p>
+                        )}
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={newProjectName}
+                            onChange={(e) => setNewProjectName(e.target.value)}
+                            placeholder="Project name"
+                            className="flex-1 px-4 py-2.5 rounded-lg bg-sam-bg border border-sam-border focus:border-sam-accent focus:ring-1 focus:ring-sam-accent/30 transition-all text-sam-text placeholder:text-sam-text-dim/50 font-mono text-sm"
+                          />
+                          <button
+                            onClick={handleCreateProject}
+                            disabled={isCreatingProject || !newProjectName.trim()}
+                            className="px-4 py-2.5 rounded-lg bg-sam-accent text-sam-bg font-medium text-sm hover:bg-sam-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                          >
+                            {isCreatingProject ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Creating
+                              </>
+                            ) : (
+                              'Create'
+                            )}
+                          </button>
+                        </div>
+                        {orgoProjects.length > 0 && (
+                          <button
+                            onClick={() => setShowCreateProject(false)}
+                            className="text-sm text-sam-text-dim hover:text-sam-text"
+                          >
+                            ← Back to project list
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-6 border-t border-sam-border flex justify-end gap-3">
+                <button
+                  onClick={closeOrgoModal}
+                  className="px-5 py-2.5 rounded-lg border border-sam-border text-sam-text-dim hover:text-sam-text hover:border-sam-accent/50 font-medium text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleOrgoConfirm}
+                  disabled={!keyValidated || isSubmitting || (orgoProjects.length > 0 && !selectedProject)}
+                  className="px-5 py-2.5 rounded-lg bg-sam-accent text-sam-bg font-medium text-sm hover:bg-sam-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Setting up...
+                    </>
+                  ) : (
+                    <>
+                      Continue
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

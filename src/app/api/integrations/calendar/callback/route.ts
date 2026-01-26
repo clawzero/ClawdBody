@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
         refresh_token: tokens.refresh_token,
         expires_at: tokens.expires_in ? Math.floor(Date.now() / 1000) + tokens.expires_in : null,
         token_type: 'Bearer',
-        scope: 'https://www.googleapis.com/auth/calendar.readonly',
+        scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events',
       },
       update: {
         access_token: tokens.access_token,
