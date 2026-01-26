@@ -608,17 +608,25 @@ export default function SelectVMPage() {
 
   return (
     <div className="min-h-screen bg-sam-bg">
-      <div className="max-w-6xl mx-auto px-6 py-16">
+      <div className="max-w-7xl mx-auto px-6 py-6">
         {/* Top Navigation Bar */}
-        <div className="flex items-center justify-between mb-12">
+        <div className="flex items-center justify-between mb-8">
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6 }}
+            className="flex items-center gap-4"
           >
-            <span className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-rose-500 via-slate-400 to-teal-400 bg-clip-text text-transparent">
-              ClawdBrain
-            </span>
+            <img 
+              src="/logos/ClawdBrain.png" 
+              alt="ClawdBrain" 
+              className="h-16 md:h-20 object-contain"
+            />
+            {session?.user?.name && (
+              <span className="text-xl md:text-2xl font-medium text-sam-text">
+                Hi {session.user.name.split(' ')[0]}!
+              </span>
+            )}
           </motion.div>
           <motion.button
             initial={{ opacity: 0, x: 20 }}
