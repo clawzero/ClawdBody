@@ -86,7 +86,7 @@ interface OrgoRAMOption {
 const orgoRAMOptions: OrgoRAMOption[] = [
   { id: 2, name: '2 GB', description: 'Light tasks', freeTier: true },
   { id: 4, name: '4 GB', description: 'Standard workloads', freeTier: true },
-  { id: 8, name: '8 GB', description: 'AI & development', freeTier: true },
+  { id: 8, name: '8 GB', description: 'AI & development', freeTier: false }, // Requires Pro plan
   { id: 16, name: '16 GB', description: 'Heavy workloads', freeTier: false, recommended: true }, // Requires Pro plan
   { id: 32, name: '32 GB', description: 'Large datasets', freeTier: false },  // Requires Pro plan
 ]
@@ -178,13 +178,13 @@ const vmOptions: VMOption[] = [
 export default function SelectVMPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
-  
+
   // VM list state
   const [userVMs, setUserVMs] = useState<UserVM[]>([])
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [isLoadingVMs, setIsLoadingVMs] = useState(true)
   const [deletingVMId, setDeletingVMId] = useState<string | null>(null)
-  
+
   // General state
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -280,7 +280,7 @@ export default function SelectVMPage() {
     if (provider === 'orgo') {
       setOrgoVMName(`Orgo VM ${userVMs.filter(vm => vm.provider === 'orgo').length + 1}`)
       setOrgoError(null)
-      
+
       // If we already have Orgo API key stored, skip to project selection
       if (credentials?.hasOrgoApiKey) {
         setShowOrgoModal(true)
@@ -293,7 +293,7 @@ export default function SelectVMPage() {
     } else if (provider === 'aws') {
       setAwsVMName(`AWS VM ${userVMs.filter(vm => vm.provider === 'aws').length + 1}`)
       setAwsError(null)
-      
+
       // If we already have AWS credentials stored, skip to configuration
       if (credentials?.hasAwsCredentials) {
         setShowAWSModal(true)
@@ -307,7 +307,7 @@ export default function SelectVMPage() {
     } else if (provider === 'e2b') {
       setE2bVMName(`E2B Sandbox ${userVMs.filter(vm => vm.provider === 'e2b').length + 1}`)
       setE2bError(null)
-      
+
       // If we already have E2B API key stored, skip to configuration
       if (credentials?.hasE2bApiKey) {
         setShowE2BModal(true)
@@ -397,7 +397,7 @@ export default function SelectVMPage() {
 
       setKeyValidated(true)
       setOrgoProjects(data.projects || [])
-      
+
       if (!data.hasProjects) {
         setShowCreateProject(true)
       }
@@ -432,7 +432,7 @@ export default function SelectVMPage() {
 
       setSelectedProject(data.project)
       setShowCreateProject(false)
-      
+
       if (data.project.id) {
         setOrgoProjects(prev => [...prev, data.project])
       }
@@ -516,9 +516,9 @@ export default function SelectVMPage() {
         }
         throw new Error(data.error || 'Failed to create VM')
       }
-      
+
       closeOrgoModal()
-      
+
       // Redirect to learning-sources page for this VM
       router.push(`/learning-sources?vmId=${data.vm.id}`)
     } catch (e) {
@@ -622,9 +622,9 @@ export default function SelectVMPage() {
       }
 
       const data = await res.json()
-      
+
       closeAWSModal()
-      
+
       // Redirect to learning-sources page for this VM
       router.push(`/learning-sources?vmId=${data.vm.id}`)
     } catch (e) {
@@ -712,9 +712,9 @@ export default function SelectVMPage() {
       }
 
       const data = await res.json()
-      
+
       closeE2BModal()
-      
+
       // Redirect to learning-sources page for this VM
       router.push(`/learning-sources?vmId=${data.vm.id}`)
     } catch (e) {
@@ -803,9 +803,9 @@ export default function SelectVMPage() {
             transition={{ duration: 0.6 }}
             className="flex items-center gap-4"
           >
-            <img 
-              src="/logos/ClawdBody.png" 
-              alt="ClawdBody" 
+            <img
+              src="/logos/ClawdBody.png"
+              alt="ClawdBody"
               className="h-16 md:h-20 object-contain"
             />
             {session?.user?.name && (
@@ -874,7 +874,7 @@ export default function SelectVMPage() {
                 Active VMs ({userVMs.length})
               </h2>
             </div>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {userVMs.map((vm, index) => (
                 <motion.div
@@ -910,7 +910,7 @@ export default function SelectVMPage() {
                       </button>
                     </div>
                   </div>
-                  
+
                   <div className="flex-1 flex flex-col justify-between">
                     <div className="flex items-center justify-between mb-3">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-mono border ${getStatusColor(vm.status)}`}>
@@ -961,7 +961,7 @@ export default function SelectVMPage() {
             <Plus className="w-5 h-5 text-sam-accent" />
             Add a New VM
           </h2>
-          
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {vmOptions.map((option, index) => {
               const isDisabled = !option.available || isSubmitting
@@ -974,11 +974,10 @@ export default function SelectVMPage() {
                   transition={{ duration: 0.5, delay: 0.1 * index }}
                   onClick={() => handleProviderClick(option.id)}
                   disabled={isDisabled}
-                  className={`relative p-5 rounded-xl border transition-all duration-300 text-left ${
-                    isDisabled
+                  className={`relative p-5 rounded-xl border transition-all duration-300 text-left ${isDisabled
                       ? 'border-sam-border bg-sam-surface/30 opacity-60 cursor-not-allowed'
                       : 'border-sam-border bg-sam-surface/30 hover:border-sam-accent/50 hover:bg-sam-surface/40 cursor-pointer'
-                  }`}
+                    }`}
                 >
                   {/* Icon */}
                   <div className="flex items-center justify-center mb-4 h-14">
@@ -1025,12 +1024,12 @@ export default function SelectVMPage() {
                     (option.id === 'aws' && credentials?.hasAwsCredentials) ||
                     (option.id === 'e2b' && credentials?.hasE2bApiKey)
                   ) && (
-                    <div className="absolute top-3 right-3">
-                      <span className="text-[10px] font-mono text-sam-accent bg-sam-accent/10 px-1.5 py-0.5 rounded">
-                        Quick Add
-                      </span>
-                    </div>
-                  )}
+                      <div className="absolute top-3 right-3">
+                        <span className="text-[10px] font-mono text-sam-accent bg-sam-accent/10 px-1.5 py-0.5 rounded">
+                          Quick Add
+                        </span>
+                      </div>
+                    )}
                 </motion.button>
               )
             })}
@@ -1053,7 +1052,7 @@ export default function SelectVMPage() {
             <ArrowRight className="w-5 h-5" />
           </button>
         </motion.div>
-        
+
         {userVMs.length === 0 && (
           <p className="text-center text-sm text-sam-text-dim mt-4">
             Add at least one VM to continue
@@ -1143,11 +1142,10 @@ export default function SelectVMPage() {
                         }}
                         placeholder="Enter your Orgo API key"
                         disabled={keyValidated}
-                        className={`flex-1 px-4 py-2.5 rounded-lg bg-sam-bg border transition-all text-sam-text placeholder:text-sam-text-dim/50 font-mono text-sm ${
-                          keyValidated
+                        className={`flex-1 px-4 py-2.5 rounded-lg bg-sam-bg border transition-all text-sam-text placeholder:text-sam-text-dim/50 font-mono text-sm ${keyValidated
                             ? 'border-green-500/50 bg-green-500/5'
                             : 'border-sam-border focus:border-sam-accent focus:ring-1 focus:ring-sam-accent/30'
-                        }`}
+                          }`}
                       />
                       {!keyValidated ? (
                         <button
@@ -1217,11 +1215,10 @@ export default function SelectVMPage() {
                             <button
                               key={project.id}
                               onClick={() => handleSelectProject(project)}
-                              className={`w-full p-3 rounded-lg border text-left transition-all ${
-                                selectedProject?.id === project.id
+                              className={`w-full p-3 rounded-lg border text-left transition-all ${selectedProject?.id === project.id
                                   ? 'border-sam-accent bg-sam-accent/10'
                                   : 'border-sam-border hover:border-sam-accent/50 hover:bg-sam-bg'
-                              }`}
+                                }`}
                             >
                               <div className="flex items-center justify-between">
                                 <span className="text-sam-text font-medium">{project.name}</span>
@@ -1300,11 +1297,10 @@ export default function SelectVMPage() {
                         <button
                           key={option.id}
                           onClick={() => setSelectedOrgoRAM(option.id)}
-                          className={`p-2.5 rounded-lg border text-left transition-all ${
-                            selectedOrgoRAM === option.id
+                          className={`p-2.5 rounded-lg border text-left transition-all flex flex-col justify-center ${selectedOrgoRAM === option.id
                               ? 'border-sam-accent bg-sam-accent/10'
                               : 'border-sam-border hover:border-sam-accent/50 hover:bg-sam-bg'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center justify-between mb-0.5">
                             <span className="text-sam-text font-medium text-sm">{option.name}</span>
@@ -1330,15 +1326,15 @@ export default function SelectVMPage() {
                           <div className="flex-1">
                             <p className="text-blue-400 font-medium">Pro Plan Feature</p>
                             <p className="text-blue-400/80 text-sm mt-1">
-                              {orgoRAMOptions.find(opt => opt.id === selectedOrgoRAM)?.name} RAM requires an Orgo Pro plan. 
+                              {orgoRAMOptions.find(opt => opt.id === selectedOrgoRAM)?.name} RAM requires an Orgo Pro plan.
                               If you already have a Pro plan, you can proceed.
                             </p>
                           </div>
                         </div>
-                        <a 
-                          href="https://www.orgo.ai/pricing" 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
+                        <a
+                          href="https://www.orgo.ai/pricing"
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-500/20 border border-blue-500/40 text-blue-400 font-medium text-sm hover:bg-blue-500/30 hover:border-blue-500/50 transition-all"
                         >
                           <ExternalLink className="w-4 h-4" />
@@ -1489,11 +1485,10 @@ export default function SelectVMPage() {
                         }}
                         placeholder="Access Key (e.g., AKIAIOSFODNN7EXAMPLE)"
                         disabled={awsKeyValidated}
-                        className={`w-full px-4 py-2.5 rounded-lg bg-sam-bg border transition-all text-sam-text placeholder:text-sam-text-dim/50 font-mono text-sm ${
-                          awsKeyValidated
+                        className={`w-full px-4 py-2.5 rounded-lg bg-sam-bg border transition-all text-sam-text placeholder:text-sam-text-dim/50 font-mono text-sm ${awsKeyValidated
                             ? 'border-green-500/50 bg-green-500/5'
                             : 'border-sam-border focus:border-sam-accent focus:ring-1 focus:ring-sam-accent/30'
-                        }`}
+                          }`}
                       />
                       <input
                         type="password"
@@ -1504,11 +1499,10 @@ export default function SelectVMPage() {
                         }}
                         placeholder="Secret Access Key"
                         disabled={awsKeyValidated}
-                        className={`w-full px-4 py-2.5 rounded-lg bg-sam-bg border transition-all text-sam-text placeholder:text-sam-text-dim/50 font-mono text-sm ${
-                          awsKeyValidated
+                        className={`w-full px-4 py-2.5 rounded-lg bg-sam-bg border transition-all text-sam-text placeholder:text-sam-text-dim/50 font-mono text-sm ${awsKeyValidated
                             ? 'border-green-500/50 bg-green-500/5'
                             : 'border-sam-border focus:border-sam-accent focus:ring-1 focus:ring-sam-accent/30'
-                        }`}
+                          }`}
                       />
                     </div>
 
@@ -1541,7 +1535,7 @@ export default function SelectVMPage() {
                         </button>
                       )}
                     </div>
-                    
+
                     {awsKeyValidated && (
                       <p className="text-xs text-green-400 flex items-center gap-1">
                         <CheckCircle2 className="w-3 h-3" /> AWS credentials validated successfully
@@ -1610,11 +1604,10 @@ export default function SelectVMPage() {
                           <button
                             key={type.id}
                             onClick={() => setAwsInstanceType(type.id)}
-                            className={`p-3 rounded-lg border text-left transition-all ${
-                              awsInstanceType === type.id
+                            className={`p-3 rounded-lg border text-left transition-all ${awsInstanceType === type.id
                                 ? 'border-sam-accent bg-sam-accent/10'
                                 : 'border-sam-border hover:border-sam-accent/50 hover:bg-sam-bg'
-                            }`}
+                              }`}
                           >
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-sam-text font-mono text-sm">{type.name}</span>
@@ -1643,11 +1636,11 @@ export default function SelectVMPage() {
                     {/* Permissions Notice */}
                     <div className="p-3 rounded-lg bg-sam-bg border border-sam-border">
                       <p className="text-xs text-sam-text-dim">
-                        <strong className="text-sam-text">Required AWS permissions:</strong> EC2 (create/manage instances), 
-                        VPC (security groups), SSM (optional, for remote commands). 
-                        <a 
-                          href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_users_create.html" 
-                          target="_blank" 
+                        <strong className="text-sam-text">Required AWS permissions:</strong> EC2 (create/manage instances),
+                        VPC (security groups), SSM (optional, for remote commands).
+                        <a
+                          href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_users_create.html"
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="text-sam-accent hover:underline ml-1"
                         >
@@ -1786,11 +1779,10 @@ export default function SelectVMPage() {
                         }}
                         placeholder="e2b_..."
                         disabled={e2bKeyValidated}
-                        className={`flex-1 px-4 py-2.5 rounded-lg bg-sam-bg border transition-all text-sam-text placeholder:text-sam-text-dim/50 font-mono text-sm ${
-                          e2bKeyValidated
+                        className={`flex-1 px-4 py-2.5 rounded-lg bg-sam-bg border transition-all text-sam-text placeholder:text-sam-text-dim/50 font-mono text-sm ${e2bKeyValidated
                             ? 'border-green-500/50 bg-green-500/5'
                             : 'border-sam-border focus:border-sam-accent focus:ring-1 focus:ring-sam-accent/30'
-                        }`}
+                          }`}
                       />
                       {!e2bKeyValidated ? (
                         <button
@@ -1819,7 +1811,7 @@ export default function SelectVMPage() {
                         </button>
                       )}
                     </div>
-                    
+
                     {e2bKeyValidated && (
                       <p className="text-xs text-green-400 flex items-center gap-1">
                         <CheckCircle2 className="w-3 h-3" /> E2B API key validated successfully
@@ -1863,11 +1855,10 @@ export default function SelectVMPage() {
                           <button
                             key={option.id}
                             onClick={() => setSelectedE2bTimeout(option.id)}
-                            className={`p-3 rounded-lg border text-left transition-all ${
-                              selectedE2bTimeout === option.id
+                            className={`p-3 rounded-lg border text-left transition-all ${selectedE2bTimeout === option.id
                                 ? 'border-sam-accent bg-sam-accent/10'
                                 : 'border-sam-border hover:border-sam-accent/50 hover:bg-sam-bg'
-                            }`}
+                              }`}
                           >
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-sam-text font-medium text-sm">{option.name}</span>
@@ -1888,11 +1879,11 @@ export default function SelectVMPage() {
                     {/* E2B Info Notice */}
                     <div className="p-3 rounded-lg bg-sam-bg border border-sam-border">
                       <p className="text-xs text-sam-text-dim">
-                        <strong className="text-sam-text">Note:</strong> E2B sandboxes are ephemeral environments. 
+                        <strong className="text-sam-text">Note:</strong> E2B sandboxes are ephemeral environments.
                         Data does not persist after the timeout expires. Sandboxes include Python, Node.js, and internet access.
-                        <a 
-                          href="https://e2b.dev/docs" 
-                          target="_blank" 
+                        <a
+                          href="https://e2b.dev/docs"
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="text-sam-accent hover:underline ml-1"
                         >

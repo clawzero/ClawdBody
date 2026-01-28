@@ -242,7 +242,7 @@ function LearningSourcesContent() {
   const [connectedSources, setConnectedSources] = useState<Set<string>>(new Set())
   const [currentVM, setCurrentVM] = useState<VMInfo | null>(null)
   const [allVMs, setAllVMs] = useState<VMInfo[]>([])
-  
+
   // Get vmId from URL params
   const vmId = searchParams?.get('vmId')
 
@@ -253,7 +253,7 @@ function LearningSourcesContent() {
       if (response.ok) {
         const data = await response.json()
         setAllVMs(data.vms || [])
-        
+
         // If vmId is provided, find that VM
         if (vmId && data.vms) {
           const vm = data.vms.find((v: VMInfo) => v.id === vmId)
@@ -371,13 +371,13 @@ function LearningSourcesContent() {
     }
     // Run immediately on mount
     checkInitialStatus()
-    
+
     // Check periodically to detect if computer was deleted from Orgo
     const interval = setInterval(checkInitialStatus, 5000) // Check every 5 seconds
-    
+
     return () => clearInterval(interval)
   }, [addLog])
-  
+
   // Check status immediately on mount to avoid flash of wrong content
   useEffect(() => {
     const checkStatusImmediately = async () => {
@@ -386,13 +386,13 @@ function LearningSourcesContent() {
         const vmsRes = await fetch('/api/vms')
         if (vmsRes.ok) {
           const vmsData = await vmsRes.json()
-          
+
           // Redirect to select-vm if user has no VMs
           if (!vmsData.vms || vmsData.vms.length === 0) {
             router.push('/select-vm')
             return // Don't set loading states, just redirect
           }
-          
+
           // Update VM state
           setAllVMs(vmsData.vms)
           if (vmId) {
@@ -407,17 +407,17 @@ function LearningSourcesContent() {
             setCurrentVM(vmsData.vms[0])
           }
         }
-        
+
         const statusUrl = vmId ? `/api/setup/status?vmId=${vmId}` : '/api/setup/status'
         const res = await fetch(statusUrl)
         if (res.ok) {
           const status: SetupStatus = await res.json()
           setSetupStatus(status)
-          
+
           // Only set loading states if we're not redirecting
           setIsLoadingStatus(false)
           setIsCheckingRedirect(false)
-          
+
           // Set UI state based on status
           // Check if VM is ready - works for all providers (Orgo, AWS, E2B)
           const isVMReady = status.status === 'ready' && (
@@ -427,11 +427,11 @@ function LearningSourcesContent() {
             status.isE2B ||           // E2B fallback
             status.vmCreated          // Generic check
           )
-          
+
           // Check if VM is provisioned but setup hasn't completed
           // This happens when VM was created with provisionNow=true but user hasn't provided Claude API key yet
           const isWaitingForSetup = status.status === 'running' && status.vmCreated && !status.clawdbotInstalled
-          
+
           if (isVMReady) {
             setShowSetupProgress(false)
           } else if (isWaitingForSetup) {
@@ -464,13 +464,13 @@ function LearningSourcesContent() {
 
     const pollStatus = async () => {
       if (shouldStop) return
-      
+
       try {
         const statusUrl = vmId ? `/api/setup/status?vmId=${vmId}` : '/api/setup/status'
         const res = await fetch(statusUrl)
         if (res.ok) {
           const status: SetupStatus = await res.json()
-          
+
           setSetupStatus(prevStatus => {
             // Add logs for status changes
             if (prevStatus) {
@@ -534,7 +534,7 @@ function LearningSourcesContent() {
       const res = await fetch('/api/setup/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           claudeApiKey,
           telegramBotToken: telegramBotToken.trim() || undefined,
           telegramUserId: telegramUserId.trim() || undefined,
@@ -551,7 +551,7 @@ function LearningSourcesContent() {
       setShowSetupProgress(true)
       addLog('info', 'Setup process started...')
       addLog('info', 'Creating Orgo VM...')
-      
+
       // Clear the input
       setClaudeApiKey('')
     } catch (e) {
@@ -585,9 +585,9 @@ function LearningSourcesContent() {
             transition={{ duration: 0.6 }}
             className="flex items-center gap-4"
           >
-            <img 
-              src="/logos/ClawdBody.png" 
-              alt="ClawdBody" 
+            <img
+              src="/logos/ClawdBody.png"
+              alt="ClawdBody"
               className="h-16 md:h-20 object-contain"
             />
             {session?.user?.name && (
@@ -648,18 +648,33 @@ function LearningSourcesContent() {
               </div>
             </div>
           ) : showSetupProgress ? (
-            <SetupProgressView 
-              setupStatus={setupStatus} 
-              logs={setupLogs}
-              vmId={vmId}
-              onReset={() => {
-                setShowSetupProgress(false)
-                setSetupStatus(null)
-                setSetupLogs([])
-              }}
-            />
+            <>
+              {/* Orgo-specific setup time notice */}
+              {(setupStatus?.vmProvider === 'orgo' || currentVM?.provider === 'orgo') && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5 }}
+                  className="mb-6 p-6 rounded-2xl border border-blue-400/50 bg-blue-400/5 backdrop-blur"
+                >
+                  <p className="text-sm text-blue-300 font-body leading-relaxed">
+                    Feel free to grab a coffee while we set up your workspace ☕ This usually takes around 25-30 minutes.
+                  </p>
+                </motion.div>
+              )}
+              <SetupProgressView
+                setupStatus={setupStatus}
+                logs={setupLogs}
+                vmId={vmId}
+                onReset={() => {
+                  setShowSetupProgress(false)
+                  setSetupStatus(null)
+                  setSetupLogs([])
+                }}
+              />
+            </>
           ) : setupStatus?.status === 'ready' && (setupStatus?.orgoComputerId || setupStatus?.awsInstanceId || setupStatus?.e2bSandboxId || setupStatus?.isE2B || setupStatus?.vmCreated) ? (
-            <ComputerConnectedView 
+            <ComputerConnectedView
               setupStatus={setupStatus}
               vmId={vmId}
               onStatusUpdate={async () => {
@@ -688,7 +703,7 @@ function LearningSourcesContent() {
                       return
                     }
                   }
-                  
+
                   // Fallback to old delete-computer endpoint for backward compatibility
                   const res = await fetch('/api/setup/delete-computer', {
                     method: 'POST',
@@ -729,102 +744,102 @@ function LearningSourcesContent() {
                     </div>
                   </motion.div>
                 )}
-                
+
                 <h2 className="text-2xl font-display font-bold mb-2">Enter your API Keys</h2>
 
-              {setupError && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="mb-6 p-4 rounded-lg bg-sam-error/10 border border-sam-error/30 flex items-start gap-3"
-                >
-                  <AlertCircle className="w-5 h-5 text-sam-error flex-shrink-0 mt-0.5" />
-                  <p className="text-sam-error text-sm">{setupError}</p>
-                </motion.div>
-              )}
-
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-mono text-sam-text-dim mb-2">
-                    Claude API Key <span className="text-sam-error">*</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="password"
-                      value={claudeApiKey}
-                      onChange={(e) => setClaudeApiKey(e.target.value)}
-                      placeholder="sk-ant-api03-..."
-                      className="w-full px-4 py-3 rounded-lg bg-sam-bg border border-sam-border focus:border-sam-accent outline-none font-mono text-sm transition-colors"
-                    />
-                  </div>
-                  <a 
-                    href="https://console.anthropic.com/settings/keys" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 mt-2 text-xs text-sam-accent hover:underline"
+                {setupError && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="mb-6 p-4 rounded-lg bg-sam-error/10 border border-sam-error/30 flex items-start gap-3"
                   >
-                    Get your key from Anthropic Console
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
+                    <AlertCircle className="w-5 h-5 text-sam-error flex-shrink-0 mt-0.5" />
+                    <p className="text-sam-error text-sm">{setupError}</p>
+                  </motion.div>
+                )}
 
-                <div>
-                  <label className="block text-sm font-mono text-sam-text-dim mb-2">
-                    Telegram Bot Token <span className="text-sam-text-dim text-xs">(Optional)</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="password"
-                      value={telegramBotToken}
-                      onChange={(e) => setTelegramBotToken(e.target.value)}
-                      placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
-                      className="w-full px-4 py-3 rounded-lg bg-sam-bg border border-sam-border focus:border-sam-accent outline-none font-mono text-sm transition-colors"
-                    />
-                  </div>
-                  <p className="mt-2 text-xs text-sam-text-dim">
-                    Get your bot token from <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" className="text-sam-accent hover:underline">@BotFather</a> on Telegram
-                  </p>
-                </div>
-
-                {telegramBotToken.trim() && (
+                <div className="space-y-6">
                   <div>
                     <label className="block text-sm font-mono text-sam-text-dim mb-2">
-                      Telegram User ID <span className="text-sam-text-dim text-xs">(Optional - for allowlist)</span>
+                      Claude API Key <span className="text-sam-error">*</span>
                     </label>
                     <div className="relative">
                       <input
-                        type="text"
-                        value={telegramUserId}
-                        onChange={(e) => setTelegramUserId(e.target.value)}
-                        placeholder="123456789"
+                        type="password"
+                        value={claudeApiKey}
+                        onChange={(e) => setClaudeApiKey(e.target.value)}
+                        placeholder="sk-ant-api03-..."
+                        className="w-full px-4 py-3 rounded-lg bg-sam-bg border border-sam-border focus:border-sam-accent outline-none font-mono text-sm transition-colors"
+                      />
+                    </div>
+                    <a
+                      href="https://console.anthropic.com/settings/keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 mt-2 text-xs text-sam-accent hover:underline"
+                    >
+                      Get your key from Anthropic Console
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-mono text-sam-text-dim mb-2">
+                      Telegram Bot Token <span className="text-sam-text-dim text-xs">(Optional)</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="password"
+                        value={telegramBotToken}
+                        onChange={(e) => setTelegramBotToken(e.target.value)}
+                        placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
                         className="w-full px-4 py-3 rounded-lg bg-sam-bg border border-sam-border focus:border-sam-accent outline-none font-mono text-sm transition-colors"
                       />
                     </div>
                     <p className="mt-2 text-xs text-sam-text-dim">
-                      Your Telegram user ID. Get it from <a href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer" className="text-sam-accent hover:underline">@userinfobot</a>
+                      Get your bot token from <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" className="text-sam-accent hover:underline">@BotFather</a> on Telegram
                     </p>
                   </div>
-                )}
-              </div>
 
-              <button
-                onClick={handleStartSetup}
-                disabled={isSubmitting || !claudeApiKey.trim()}
-                className="mt-8 w-full flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-sam-accent text-sam-bg font-display font-semibold hover:bg-sam-accent-dim disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Starting setup...
-                  </>
-                ) : (
-                  <>
-                    Begin Setup
-                    <ArrowRight className="w-5 h-5" />
-                  </>
-                )}
-              </button>
-            </div>
+                  {telegramBotToken.trim() && (
+                    <div>
+                      <label className="block text-sm font-mono text-sam-text-dim mb-2">
+                        Telegram User ID <span className="text-sam-text-dim text-xs">(Optional - for allowlist)</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={telegramUserId}
+                          onChange={(e) => setTelegramUserId(e.target.value)}
+                          placeholder="123456789"
+                          className="w-full px-4 py-3 rounded-lg bg-sam-bg border border-sam-border focus:border-sam-accent outline-none font-mono text-sm transition-colors"
+                        />
+                      </div>
+                      <p className="mt-2 text-xs text-sam-text-dim">
+                        Your Telegram user ID. Get it from <a href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer" className="text-sam-accent hover:underline">@userinfobot</a>
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={handleStartSetup}
+                  disabled={isSubmitting || !claudeApiKey.trim()}
+                  className="mt-8 w-full flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-sam-accent text-sam-bg font-display font-semibold hover:bg-sam-accent-dim disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Starting setup...
+                    </>
+                  ) : (
+                    <>
+                      Begin Setup
+                      <ArrowRight className="w-5 h-5" />
+                    </>
+                  )}
+                </button>
+              </div>
             </>
           )}
         </motion.div>
@@ -837,19 +852,19 @@ function LearningSourcesContent() {
           className="mb-8"
         >
           <div className="p-6 rounded-2xl border border-yellow-500/30 bg-yellow-500/5 backdrop-blur flex items-center gap-4">
-            <img 
-              src="/logos/ClawdBodySorry.png" 
-              alt="ClawdBody" 
+            <img
+              src="/logos/ClawdBodySorry.png"
+              alt="ClawdBody"
               className="w-16 h-16 md:w-20 md:h-20 object-contain flex-shrink-0"
             />
             <div className="flex-1">
               <h3 className="text-base font-display font-semibold text-sam-text mb-2">Feedback</h3>
               <p className="text-sam-text text-sm leading-relaxed">
-                Clawdbot is still actively in development and might be rough around the edges. 
+                Clawdbot is still actively in development and might be rough around the edges.
                 If you face any issues, please{' '}
-                <a 
-                  href="https://github.com/Prakshal-Jain/ClawdBody/issues/new" 
-                  target="_blank" 
+                <a
+                  href="https://github.com/Prakshal-Jain/ClawdBody/issues/new"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="text-sam-accent hover:underline font-medium inline-flex items-center gap-1"
                 >
@@ -873,7 +888,7 @@ function LearningSourcesContent() {
             Connect your sources
           </h1>
           <p className="text-lg text-sam-text-dim max-w-3xl font-body leading-relaxed">
-          Your context lives securely in your private GitHub repository. This is shared across VMs to infer and execute tasks.
+            Your context lives securely in your private GitHub repository. This is shared across VMs to infer and execute tasks.
           </p>
         </motion.div>
 
@@ -904,11 +919,10 @@ function LearningSourcesContent() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.4 }}
-                className={`flex flex-col md:flex-row items-center justify-between gap-6 p-6 rounded-2xl border bg-sam-surface/30 ${
-                  !density.sufficient && density.percentage > 0
+                className={`flex flex-col md:flex-row items-center justify-between gap-6 p-6 rounded-2xl border bg-sam-surface/30 ${!density.sufficient && density.percentage > 0
                     ? 'border-orange-400/50'
                     : 'border-sam-border'
-                }`}
+                  }`}
               >
                 <div className="flex items-center gap-4">
                   <div>
@@ -1008,7 +1022,7 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
     if (connector.id === 'github') {
       setIsLoadingRepos(true)
       setShowGithubDialog(true)
-      
+
       try {
         const response = await fetch(`/api/integrations/${connector.id}/connect`, {
           method: 'GET',
@@ -1084,7 +1098,7 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
       }
 
       const data = await response.json()
-      
+
       setIsConnected(true)
       setShowGithubDialog(false)
       setSelectedRepos(new Set())
@@ -1119,7 +1133,7 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
 
       const data = await response.json()
       setIsSynced(true)
-      
+
       // Reset to "Resync" after 3 seconds
       setTimeout(() => {
         setIsSynced(false)
@@ -1169,14 +1183,13 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
           {connector.available ? (
             isConnected ? (
               connector.autoLiveSync ? (
-                <button 
+                <button
                   onClick={handleResync}
                   disabled={isSyncing || isSynced}
-                  className={`px-4 py-2 rounded-lg border font-display font-semibold text-sm transition-all whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${
-                    isSynced
+                  className={`px-4 py-2 rounded-lg border font-display font-semibold text-sm transition-all whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${isSynced
                       ? 'border-green-500 bg-green-500/10 text-green-500'
                       : 'border-sam-accent text-sam-accent hover:bg-sam-accent/10'
-                  }`}
+                    }`}
                 >
                   {isSyncing ? (
                     <>
@@ -1196,7 +1209,7 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
                   )}
                 </button>
               ) : (
-                <button 
+                <button
                   disabled
                   className="px-4 py-2 rounded-lg border border-green-500 bg-green-500/10 text-green-500 font-display font-semibold text-sm whitespace-nowrap flex items-center gap-2"
                 >
@@ -1205,7 +1218,7 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
                 </button>
               )
             ) : (
-              <button 
+              <button
                 onClick={handleConnect}
                 disabled={isConnecting}
                 className="px-4 py-2 rounded-lg border border-sam-accent text-sam-accent font-display font-semibold text-sm hover:bg-sam-accent/10 transition-all whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
@@ -1221,7 +1234,7 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
               </button>
             )
           ) : (
-            <button 
+            <button
               disabled
               className="px-4 py-2 rounded-lg bg-sam-surface border border-sam-border text-sam-text-dim font-display font-medium text-sm cursor-not-allowed opacity-60 whitespace-nowrap"
             >
@@ -1338,12 +1351,12 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
   )
 }
 
-function SetupProgressView({ 
-  setupStatus, 
+function SetupProgressView({
+  setupStatus,
   logs,
   onReset,
-  vmId 
-}: { 
+  vmId
+}: {
   setupStatus: SetupStatus | null
   logs: Array<{ time: Date; message: string; type: 'info' | 'success' | 'error' }>
   onReset: () => void
@@ -1351,7 +1364,7 @@ function SetupProgressView({
 }) {
   const [currentScreenshot, setCurrentScreenshot] = useState<string | null>(null)
   const [isProgressCollapsed, setIsProgressCollapsed] = useState(false)
-  
+
   // Poll for screenshots if VM is created
   useEffect(() => {
     if (!setupStatus?.orgoComputerId || !setupStatus?.vmCreated) {
@@ -1382,7 +1395,7 @@ function SetupProgressView({
             // VM is still starting, this is normal - don't log as error
             return
           }
-          
+
           const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
           // Only log non-503 errors
           if (res.status !== 503) {
@@ -1406,49 +1419,49 @@ function SetupProgressView({
   }, [setupStatus?.orgoComputerId, setupStatus?.vmCreated])
   // Determine if Telegram was configured (either completed or in progress)
   const hasTelegramSetup = setupStatus?.telegramConfigured || setupStatus?.gatewayStarted
-  
+
   const allSteps = [
-    { 
-      id: 'provisioning', 
-      label: 'Provisioning VM', 
+    {
+      id: 'provisioning',
+      label: 'Provisioning VM',
       icon: Server,
       check: () => setupStatus?.vmCreated || false,
       active: () => setupStatus?.status === 'provisioning'
     },
-    { 
-      id: 'clawdbot', 
-      label: 'Installing Clawdbot', 
+    {
+      id: 'clawdbot',
+      label: 'Installing Clawdbot',
       icon: Bot,
       check: () => setupStatus?.clawdbotInstalled || false,
       active: () => setupStatus?.status === 'configuring_vm' && setupStatus?.vmCreated && !setupStatus?.clawdbotInstalled
     },
-    { 
-      id: 'telegram', 
-      label: 'Configuring Telegram', 
+    {
+      id: 'telegram',
+      label: 'Configuring Telegram',
       icon: MessageCircle,
       check: () => setupStatus?.telegramConfigured || false,
       active: () => setupStatus?.status === 'configuring_vm' && setupStatus?.clawdbotInstalled && !setupStatus?.telegramConfigured && !setupStatus?.gatewayStarted,
       optional: true,
       show: () => hasTelegramSetup || (setupStatus?.status === 'configuring_vm' && setupStatus?.clawdbotInstalled)
     },
-    { 
-      id: 'gateway', 
-      label: 'Starting Gateway', 
+    {
+      id: 'gateway',
+      label: 'Starting Gateway',
       icon: Terminal,
       check: () => setupStatus?.gatewayStarted || false,
       active: () => setupStatus?.status === 'configuring_vm' && setupStatus?.clawdbotInstalled && setupStatus?.telegramConfigured && !setupStatus?.gatewayStarted,
       optional: true,
       show: () => hasTelegramSetup || (setupStatus?.status === 'configuring_vm' && setupStatus?.telegramConfigured)
     },
-    { 
-      id: 'complete', 
-      label: 'Setup Complete', 
+    {
+      id: 'complete',
+      label: 'Setup Complete',
       icon: CheckCircle2,
       check: () => setupStatus?.status === 'ready' || false,
       active: () => setupStatus?.status === 'ready'
     },
   ]
-  
+
   // Filter to only show relevant steps
   const steps = allSteps.filter(step => {
     if ('show' in step && typeof step.show === 'function') {
@@ -1466,11 +1479,11 @@ function SetupProgressView({
   // Calculate progress based on completed steps (excluding optional ones if not started)
   const completedSteps = steps.filter(s => s.check()).length
   const currentStepIndex = steps.findIndex(s => s.active())
-  const progressPercentage = setupStatus?.status === 'ready' 
-    ? 100 
-    : currentStepIndex >= 0 
+  const progressPercentage = setupStatus?.status === 'ready'
+    ? 100
+    : currentStepIndex >= 0
       ? Math.round(((completedSteps) / steps.length) * 100)
-      : completedSteps > 0 
+      : completedSteps > 0
         ? Math.round((completedSteps / steps.length) * 100)
         : 0
 
@@ -1479,7 +1492,7 @@ function SetupProgressView({
       {/* VM Stream on Left */}
       <div className="rounded-2xl border border-sam-border bg-sam-surface/50 backdrop-blur overflow-hidden">
         <div className="px-6 py-4 border-b border-sam-border bg-sam-surface/50 flex items-center justify-between">
-        <div>
+          <div>
             <h3 className="text-lg font-display font-bold text-sam-text">VM Screen</h3>
             <p className="text-xs text-sam-text-dim font-mono">Live view</p>
           </div>
@@ -1498,7 +1511,7 @@ function SetupProgressView({
         <div className="aspect-video bg-sam-bg flex items-center justify-center relative">
           {setupStatus?.vmCreated && setupStatus?.orgoComputerId ? (
             currentScreenshot ? (
-              <img 
+              <img
                 src={currentScreenshot.startsWith('http') ? currentScreenshot : `data:image/png;base64,${currentScreenshot}`}
                 alt="VM Screen"
                 className="w-full h-full object-contain"
@@ -1524,160 +1537,156 @@ function SetupProgressView({
 
       {/* Progress Card on Right (Collapsible) */}
       <div className="rounded-2xl border border-sam-border bg-sam-surface/50 backdrop-blur overflow-hidden">
-        <div 
+        <div
           className="px-6 py-4 border-b border-sam-border bg-sam-surface/50 flex items-center justify-between cursor-pointer hover:bg-sam-surface/70 transition-colors"
           onClick={() => setIsProgressCollapsed(!isProgressCollapsed)}
         >
           <div>
             <h2 className="text-lg font-display font-bold mb-1">Setup Progress</h2>
             <p className="text-xs text-sam-text-dim font-mono">
-            {setupStatus?.status === 'ready' 
-                ? 'Completed successfully!' 
-              : setupStatus?.status === 'failed'
-                ? 'Encountered an error'
-                : `${Math.round(progressPercentage)}% complete`}
-          </p>
-        </div>
+              {setupStatus?.status === 'ready'
+                ? 'Completed successfully!'
+                : setupStatus?.status === 'failed'
+                  ? 'Encountered an error'
+                  : `${Math.round(progressPercentage)}% complete`}
+            </p>
+          </div>
           <div className="flex items-center gap-3">
-        {setupStatus?.status === 'ready' && (
-          <button
+            {setupStatus?.status === 'ready' && (
+              <button
                 onClick={(e) => {
                   e.stopPropagation()
                   onReset()
                 }}
                 className="px-3 py-1.5 rounded-lg border border-sam-border text-sam-text-dim hover:border-sam-accent hover:text-sam-accent transition-all font-display font-medium text-xs"
-          >
-            Reset
-          </button>
-        )}
+              >
+                Reset
+              </button>
+            )}
             {isProgressCollapsed ? (
               <ChevronDown className="w-5 h-5 text-sam-text-dim" />
             ) : (
               <ChevronUp className="w-5 h-5 text-sam-text-dim" />
-        )}
+            )}
           </div>
-      </div>
+        </div>
 
         {!isProgressCollapsed && (
           <div className="p-6 overflow-y-auto max-h-[calc(100vh-300px)]">
 
-      {/* Progress Bar */}
+            {/* Progress Bar */}
             <div className="mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-mono text-sam-text-dim">Progress</span>
-          <span className="text-sm font-mono text-sam-text-dim">{Math.round(progressPercentage)}%</span>
-        </div>
-        <div className="w-full h-2 bg-sam-surface rounded-full overflow-hidden">
-          <motion.div
-            initial={{ width: 0 }}
-            animate={{ width: `${progressPercentage}%` }}
-            transition={{ duration: 0.5 }}
-            className="h-full bg-sam-accent rounded-full"
-          />
-        </div>
-      </div>
-
-      {/* Setup Steps */}
-            <div className="space-y-4 mb-6">
-        {steps.map((step, index) => {
-          const status = getStepStatus(step)
-          const isComplete = status === 'complete'
-          const isActive = status === 'active'
-          
-          return (
-            <motion.div
-              key={step.id}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className={`p-4 rounded-lg border transition-all ${
-                isActive 
-                  ? 'border-sam-accent bg-sam-accent/10' 
-                  : isComplete
-                  ? 'border-green-500/50 bg-green-500/5'
-                  : 'border-sam-border bg-sam-surface/30'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                  isComplete
-                    ? 'bg-green-500/20 text-green-500'
-                    : isActive
-                    ? 'bg-sam-accent/20 text-sam-accent'
-                    : 'bg-sam-surface text-sam-text-dim'
-                }`}>
-                  {isComplete ? (
-                    <Check className="w-5 h-5" />
-                  ) : isActive ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <step.icon className="w-5 h-5" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <h3 className={`font-display font-semibold ${
-                    isActive ? 'text-sam-accent' : isComplete ? 'text-green-500' : 'text-sam-text-dim'
-                  }`}>
-                    {step.label}
-                  </h3>
-                  {'optional' in step && step.optional && !isComplete && !isActive && (
-                    <span className="text-xs text-sam-text-dim">(optional)</span>
-                  )}
-                </div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-mono text-sam-text-dim">Progress</span>
+                <span className="text-sm font-mono text-sam-text-dim">{Math.round(progressPercentage)}%</span>
               </div>
-            </motion.div>
-          )
-        })}
-      </div>
-
-      {/* Error Message */}
-      {setupStatus?.errorMessage && (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: 'auto' }}
-          className="mb-6 p-4 rounded-lg bg-sam-error/10 border border-sam-error/30 flex items-start gap-3"
-        >
-          <AlertCircle className="w-5 h-5 text-sam-error flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sam-error text-sm font-semibold mb-1">Setup Error</p>
-            <p className="text-sam-error text-sm">{setupStatus.errorMessage}</p>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Setup Logs */}
-      <div className="border border-sam-border rounded-lg bg-sam-bg overflow-hidden">
-        <div className="px-4 py-3 border-b border-sam-border bg-sam-surface/50">
-          <h3 className="text-sm font-display font-semibold text-sam-text">Setup Logs</h3>
-        </div>
-        <div className="p-4 max-h-64 overflow-y-auto font-mono text-xs">
-          {logs.length === 0 ? (
-            <p className="text-sam-text-dim">Waiting for setup to start...</p>
-          ) : (
-            <div className="space-y-1">
-              {logs.map((log, index) => (
-                <div
-                  key={index}
-                  className={`flex items-start gap-2 ${
-                    log.type === 'error' 
-                      ? 'text-sam-error' 
-                      : log.type === 'success'
-                      ? 'text-green-500'
-                      : 'text-sam-text-dim'
-                  }`}
-                >
-                  <span className="text-sam-text-dim/50 flex-shrink-0">
-                    {log.time.toLocaleTimeString()}
-                  </span>
-                  <span className="flex-1">{log.message}</span>
-                </div>
-              ))}
+              <div className="w-full h-2 bg-sam-surface rounded-full overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressPercentage}%` }}
+                  transition={{ duration: 0.5 }}
+                  className="h-full bg-sam-accent rounded-full"
+                />
+              </div>
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Links removed - no vault repo */}
+            {/* Setup Steps */}
+            <div className="space-y-4 mb-6">
+              {steps.map((step, index) => {
+                const status = getStepStatus(step)
+                const isComplete = status === 'complete'
+                const isActive = status === 'active'
+
+                return (
+                  <motion.div
+                    key={step.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    className={`p-4 rounded-lg border transition-all ${isActive
+                        ? 'border-sam-accent bg-sam-accent/10'
+                        : isComplete
+                          ? 'border-green-500/50 bg-green-500/5'
+                          : 'border-sam-border bg-sam-surface/30'
+                      }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isComplete
+                          ? 'bg-green-500/20 text-green-500'
+                          : isActive
+                            ? 'bg-sam-accent/20 text-sam-accent'
+                            : 'bg-sam-surface text-sam-text-dim'
+                        }`}>
+                        {isComplete ? (
+                          <Check className="w-5 h-5" />
+                        ) : isActive ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <step.icon className="w-5 h-5" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <h3 className={`font-display font-semibold ${isActive ? 'text-sam-accent' : isComplete ? 'text-green-500' : 'text-sam-text-dim'
+                          }`}>
+                          {step.label}
+                        </h3>
+                        {'optional' in step && step.optional && !isComplete && !isActive && (
+                          <span className="text-xs text-sam-text-dim">(optional)</span>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </div>
+
+            {/* Error Message */}
+            {setupStatus?.errorMessage && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="mb-6 p-4 rounded-lg bg-sam-error/10 border border-sam-error/30 flex items-start gap-3"
+              >
+                <AlertCircle className="w-5 h-5 text-sam-error flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sam-error text-sm font-semibold mb-1">Setup Error</p>
+                  <p className="text-sam-error text-sm">{setupStatus.errorMessage}</p>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Setup Logs */}
+            <div className="border border-sam-border rounded-lg bg-sam-bg overflow-hidden">
+              <div className="px-4 py-3 border-b border-sam-border bg-sam-surface/50">
+                <h3 className="text-sm font-display font-semibold text-sam-text">Setup Logs</h3>
+              </div>
+              <div className="p-4 max-h-64 overflow-y-auto font-mono text-xs">
+                {logs.length === 0 ? (
+                  <p className="text-sam-text-dim">Waiting for setup to start...</p>
+                ) : (
+                  <div className="space-y-1">
+                    {logs.map((log, index) => (
+                      <div
+                        key={index}
+                        className={`flex items-start gap-2 ${log.type === 'error'
+                            ? 'text-sam-error'
+                            : log.type === 'success'
+                              ? 'text-green-500'
+                              : 'text-sam-text-dim'
+                          }`}
+                      >
+                        <span className="text-sam-text-dim/50 flex-shrink-0">
+                          {log.time.toLocaleTimeString()}
+                        </span>
+                        <span className="flex-1">{log.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Links removed - no vault repo */}
           </div>
         )}
       </div>
@@ -1685,12 +1694,12 @@ function SetupProgressView({
   )
 }
 
-function ComputerConnectedView({ 
-  setupStatus, 
+function ComputerConnectedView({
+  setupStatus,
   onStatusUpdate,
   onDelete,
-  vmId 
-}: { 
+  vmId
+}: {
   setupStatus: SetupStatus
   onStatusUpdate?: () => Promise<void>
   onDelete: () => Promise<void>
@@ -1761,16 +1770,16 @@ function ComputerConnectedView({
             }
             return
           }
-          
+
           // 503 (Service Unavailable) means VM is starting - this is expected, don't log as error
           if (res.status === 503) {
             // VM is still starting, this is normal - don't log as error
             return
           }
-          
+
           // Reset 404 counter on other errors
           consecutive404s = 0
-          
+
           const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
           // Only log non-503, non-404 errors
           if (res.status !== 503 && res.status !== 404) {
@@ -1793,7 +1802,7 @@ function ComputerConnectedView({
         // Handle errors in polling
       })
     }, 500)
-    
+
     return () => {
       if (intervalId) {
         clearInterval(intervalId)
@@ -1833,22 +1842,20 @@ function ComputerConnectedView({
               <div className="flex items-center gap-1 bg-sam-bg/80 border border-sam-border rounded-lg p-1">
                 <button
                   onClick={() => setActiveVMTab('screen')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
-                    activeVMTab === 'screen'
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${activeVMTab === 'screen'
                       ? 'bg-sam-accent/15 text-sam-accent border-sam-accent/30'
                       : 'text-sam-text-dim hover:text-sam-text hover:bg-sam-surface/50 border-transparent'
-                  }`}
+                    }`}
                 >
                   <Monitor className="w-3.5 h-3.5" />
                   Screen
                 </button>
                 <button
                   onClick={() => setActiveVMTab('terminal')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
-                    activeVMTab === 'terminal'
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${activeVMTab === 'terminal'
                       ? 'bg-sam-accent/15 text-sam-accent border-sam-accent/30'
                       : 'text-sam-text-dim hover:text-sam-text hover:bg-sam-surface/50 border-transparent'
-                  }`}
+                    }`}
                 >
                   <Terminal className="w-3.5 h-3.5" />
                   Terminal
@@ -1900,7 +1907,7 @@ function ComputerConnectedView({
             // Orgo VM: Show content based on active tab
             activeVMTab === 'screen' ? (
               currentScreenshot ? (
-                <img 
+                <img
                   src={currentScreenshot.startsWith('http') ? currentScreenshot : `data:image/png;base64,${currentScreenshot}`}
                   alt="VM Screen"
                   className="w-full h-full object-contain"
@@ -1988,7 +1995,7 @@ function ComputerConnectedView({
             </div>
           )}
         </div>
-        
+
         <div className="pt-4 border-t border-sam-border/50 mb-4">
           <h3 className="font-display font-semibold mb-3 text-sm text-sam-text">Setup Complete</h3>
           <div className="space-y-2">
