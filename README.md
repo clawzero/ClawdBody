@@ -62,16 +62,17 @@ npm install
 Create `.env` file:
 
 ```bash
-# GitHub OAuth App credentials
-# Create at: https://github.com/settings/developers
-GITHUB_CLIENT_ID=your_github_client_id
-GITHUB_CLIENT_SECRET=your_github_client_secret
+# Google OAuth App credentials (for authentication)
+# Create at: https://console.cloud.google.com/
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/callback/google
 
 # NextAuth
 NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=your_secret_here  # Generate with: openssl rand -base64 32
 
-# Orgo API Key (your admin key)
+# Orgo API Key (optional, if using Orgo as VM provider)
 ORGO_API_KEY=sk_live_your_orgo_api_key
 
 # Database (PostgreSQL)
@@ -79,11 +80,6 @@ ORGO_API_KEY=sk_live_your_orgo_api_key
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/helloworld?schema=public"
 # If using connection pooling (Vercel, Supabase), also set:
 # DIRECT_URL="postgresql://..."
-
-# Google OAuth (for Gmail integration)
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/callback/google
 
 # Cron Job Secret (optional, for securing cron endpoints)
 CRON_SECRET=your_cron_secret_here  # Generate with: openssl rand -base64 32
@@ -96,62 +92,39 @@ npx prisma generate
 npx prisma db push
 ```
 
-### 4. Create GitHub OAuth App
-
-1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
-2. Click "New OAuth App"
-3. Fill in:
-   - **Application name**: Samantha
-   - **Homepage URL**: `http://localhost:3000`
-   - **Authorization callback URL**: `http://localhost:3000/api/auth/callback/github`
-4. Copy Client ID and Client Secret to `.env`
-
-### 5. Create Google OAuth App (for Gmail Integration)
+### 4. Create Google OAuth App
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project or select existing one
-3. Enable Gmail API
-4. Go to "Credentials" → "Create Credentials" → "OAuth 2.0 Client ID"
-5. Configure:
+3. Go to "Credentials" → "Create Credentials" → "OAuth 2.0 Client ID"
+4. Configure OAuth consent screen first if prompted
+5. Configure credentials:
    - **Application type**: Web application
    - **Authorized redirect URIs**: `http://localhost:3000/api/auth/callback/google`
 6. Copy Client ID and Client Secret to `.env`
 
-### 6. Run the App
+### 5. Run the App
 
 ```bash
 npm run dev
 ```
 
-Visit `http://localhost:3000` and sign in with GitHub.
+Visit `http://localhost:3000` and sign in with Google.
 
 ## What Happens During Setup
 
-1. **GitHub OAuth** - Sign in and grant repo permissions
-2. **API Keys** - Enter your Claude and Orgo API keys
-3. **VM Provisioning** - Creates an Orgo VM (project: `claude-code`)
-4. **Vault Creation** - Creates a private GitHub repo with vault template
-5. **VM Configuration**:
-   - Clones vault repo to VM
-   - Sets up Git sync (auto-pulls from GitHub)
+1. **Google OAuth** - Sign in with your Google account
+2. **API Keys** - Enter your Claude API key and choose a VM provider (Orgo/AWS/E2B)
+3. **VM Provisioning** - Creates a VM with your selected provider
+4. **VM Configuration**:
+   - Installs Python and essential tools
+   - Installs Anthropic SDK for Claude
+   - Installs Clawdbot for autonomous task execution
+   - Configures Telegram bot (optional)
 
-## Gmail Integration
+## Integrations
 
-### Connecting Gmail
-
-1. After setup, navigate to `/learning-sources`
-2. Click "Connect" on the Gmail card
-3. Authorize Gmail access
-4. All emails will be synced to your vault in `integrations/gmail/`
-
-### Automatic Email Syncing
-
-Gmail automatically syncs new emails every 12 hours via a cron job.
-
-**For Vercel Deployment:**
-- The cron job is configured in `vercel.json`
-- Runs automatically every 12 hours at `/api/cron/gmail-sync`
-- No additional setup needed
+**Note:** Gmail, Calendar, and GitHub integrations are currently unavailable as they require a vault repository. These features will be re-enabled in a future update.
 
 **For Other Platforms:**
 Set up a cron job to call:

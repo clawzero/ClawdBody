@@ -24,25 +24,25 @@ const connectors: Connector[] = [
     id: 'gmail',
     name: 'Gmail',
     icon: <Mail className="w-6 h-6" />,
-    description: 'Import project details and track the context of important conversations.',
+    description: 'Import project details and track the context of important conversations. (Currently unavailable)',
     autoLiveSync: true,
-    available: true,
+    available: false,
   },
   {
     id: 'calendar',
     name: 'Google Calendar',
     icon: <Calendar className="w-6 h-6" />,
-    description: 'Sync your events so ClawdeBot stays on top of meetings, plans, and deadlines.',
+    description: 'Sync your events so ClawdeBot stays on top of meetings, plans, and deadlines. (Currently unavailable)',
     autoLiveSync: true,
-    available: true,
+    available: false,
   },
   {
     id: 'github',
     name: 'GitHub',
     icon: <Github className="w-6 h-6" />,
-    description: 'Let AI agents complete your unfinished projects autonomously.',
+    description: 'Let AI agents complete your unfinished projects autonomously. (Currently unavailable)',
     autoLiveSync: false,
-    available: true,
+    available: false,
   },
   {
     id: 'slack',
@@ -105,9 +105,6 @@ const connectors: Connector[] = [
 interface SetupStatus {
   status: string
   vmCreated: boolean
-  repoCreated: boolean
-  repoCloned: boolean
-  gitSyncConfigured: boolean
   clawdbotInstalled?: boolean
   telegramConfigured?: boolean
   gatewayStarted?: boolean
@@ -125,7 +122,6 @@ interface SetupStatus {
   e2bTimeout?: number
   isE2B?: boolean
   // Common
-  vaultRepoUrl?: string
   errorMessage?: string
   vmProvider?: string
 }
@@ -351,11 +347,11 @@ function LearningSourcesContent() {
               // Computer was deleted/reset - hide progress and show API key form
               setShowSetupProgress(false)
               setSetupLogs([])
-            } else if (status.status === 'running' && status.vmCreated && !status.repoCloned) {
+            } else if (status.status === 'running' && status.vmCreated && !status.clawdbotInstalled) {
               // VM is provisioned but setup hasn't started - show API key form
               setShowSetupProgress(false)
             } else if (status.status && status.status !== 'pending' && status.status !== 'ready' && status.status !== 'failed' && status.status !== 'running') {
-              // Setup in progress (provisioning, creating_repo, configuring_vm)
+              // Setup in progress (provisioning, configuring_vm)
               setShowSetupProgress(true)
               if (!prevStatus || prevStatus.status === 'pending') {
                 addLog('info', `Setup status: ${status.status}`)
@@ -434,7 +430,7 @@ function LearningSourcesContent() {
           
           // Check if VM is provisioned but setup hasn't completed
           // This happens when VM was created with provisionNow=true but user hasn't provided Claude API key yet
-          const isWaitingForSetup = status.status === 'running' && status.vmCreated && !status.repoCloned
+          const isWaitingForSetup = status.status === 'running' && status.vmCreated && !status.clawdbotInstalled
           
           if (isVMReady) {
             setShowSetupProgress(false)
@@ -484,14 +480,11 @@ function LearningSourcesContent() {
               if (status.vmCreated && !prevStatus.vmCreated) {
                 addLog('success', 'VM created successfully')
               }
-              if (status.repoCreated && !prevStatus.repoCreated) {
-                addLog('success', 'Vault repository created')
+              if (status.clawdbotInstalled && !prevStatus.clawdbotInstalled) {
+                addLog('success', 'Clawdbot installed')
               }
-              if (status.repoCloned && !prevStatus.repoCloned) {
-                addLog('success', 'Vault repository cloned to VM')
-              }
-              if (status.gitSyncConfigured && !prevStatus.gitSyncConfigured) {
-                addLog('success', 'Git sync configured')
+              if (status.telegramConfigured && !prevStatus.telegramConfigured) {
+                addLog('success', 'Telegram configured')
               }
             }
 
@@ -1387,36 +1380,14 @@ function SetupProgressView({
       label: 'Provisioning VM', 
       icon: Server,
       check: () => setupStatus?.vmCreated || false,
-      active: () => setupStatus?.status === 'provisioning' || (setupStatus?.status === 'creating_repo' && !setupStatus?.vmCreated)
-    },
-    { 
-      id: 'creating_repo', 
-      // Show "Verifying" if quick check, "Creating" if actually creating new repo
-      label: setupStatus?.status === 'creating_repo' ? 'Creating Vault Repo' : 'Verifying Vault Repo', 
-      icon: GitBranch,
-      check: () => setupStatus?.repoCreated || false,
-      active: () => setupStatus?.status === 'creating_repo' || (setupStatus?.status === 'configuring_vm' && !setupStatus?.repoCreated)
-    },
-    { 
-      id: 'cloning_repo', 
-      label: 'Cloning Repository', 
-      icon: GitBranch,
-      check: () => setupStatus?.repoCloned || false,
-      active: () => setupStatus?.status === 'configuring_vm' && setupStatus?.repoCreated && !setupStatus?.repoCloned
-    },
-    { 
-      id: 'git_sync', 
-      label: 'Configuring Git Sync', 
-      icon: RefreshCw,
-      check: () => setupStatus?.gitSyncConfigured || false,
-      active: () => setupStatus?.status === 'configuring_vm' && setupStatus?.repoCloned && !setupStatus?.gitSyncConfigured
+      active: () => setupStatus?.status === 'provisioning'
     },
     { 
       id: 'clawdbot', 
       label: 'Installing Clawdbot', 
       icon: Bot,
       check: () => setupStatus?.clawdbotInstalled || false,
-      active: () => setupStatus?.status === 'configuring_vm' && setupStatus?.gitSyncConfigured && !setupStatus?.clawdbotInstalled
+      active: () => setupStatus?.status === 'configuring_vm' && setupStatus?.vmCreated && !setupStatus?.clawdbotInstalled
     },
     { 
       id: 'telegram', 
@@ -1673,20 +1644,7 @@ function SetupProgressView({
         </div>
       </div>
 
-      {/* Links */}
-            {setupStatus && setupStatus.vaultRepoUrl && (
-              <div className="mt-6">
-            <a
-                  href={setupStatus.vaultRepoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm text-sam-accent hover:underline"
-            >
-              <ExternalLink className="w-4 h-4" />
-                  View Vault Repository
-                </a>
-              </div>
-            )}
+      {/* Links removed - no vault repo */}
           </div>
         )}
       </div>
@@ -1995,18 +1953,6 @@ function ComputerConnectedView({
                 Sandbox: {setupStatus.e2bSandboxId.slice(0, 12)}...
               </span>
             </div>
-          )}
-          {setupStatus.vaultRepoUrl && (
-            <a
-              href={setupStatus.vaultRepoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-sam-border bg-sam-surface hover:border-sam-accent transition-all w-full"
-            >
-              <GitBranch className="w-4 h-4 text-sam-accent" />
-              <span className="font-mono text-sm">View Vault Repository</span>
-              <ExternalLink className="w-4 h-4 text-sam-text-dim ml-auto" />
-            </a>
           )}
         </div>
         

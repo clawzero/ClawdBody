@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { GitHubClient } from '@/lib/github'
 import { GmailClient, getGmailTokens } from '@/lib/gmail'
@@ -77,25 +77,8 @@ async function handleCalendarCallback(request: NextRequest, userId: string, code
       },
     })
 
-    // Get user's setup state to find vault repo
-    const setupState = await prisma.setupState.findUnique({
-      where: { userId: userId },
-    })
-
-    if (!setupState?.vaultRepoName) {
-      return NextResponse.redirect(new URL('/learning-sources?error=no_vault', request.url))
-    }
-
-    // Get GitHub access token for writing to vault
-    const githubAccount = await prisma.account.findFirst({
-      where: { userId: userId, provider: 'github' },
-    })
-
-    if (!githubAccount?.access_token) {
-      return NextResponse.redirect(new URL('/learning-sources?error=no_github', request.url))
-    }
-
-    // Fetch calendar events and write to vault
+    // Calendar integration is currently unavailable without vault repo
+    // Just store the tokens for future use
     try {
       const calendarClient = new CalendarClient(
         tokens.access_token,
@@ -103,27 +86,6 @@ async function handleCalendarCallback(request: NextRequest, userId: string, code
       )
 
       const calendarEmail = await calendarClient.getUserCalendarEmail()
-      const events = await calendarClient.fetchEvents(50)
-      const githubClient = new GitHubClient(githubAccount.access_token)
-
-      // Format events for vault
-      const eventsContent = events
-        .map(event => calendarClient.formatEventForVault(event))
-        .join('\n\n---\n\n')
-
-      // Write to vault
-      await githubClient.writeFileToVault(
-        setupState.vaultRepoName,
-        'integrations/calendar/events.md',
-        `# Google Calendar Events
-
-*Last synced: ${new Date().toISOString()}*
-*Calendar: ${calendarEmail}*
-
-${eventsContent}
-`,
-        'Sync calendar events to vault'
-      )
 
       // Create or update Integration record
       await prisma.integration.upsert({
@@ -136,23 +98,23 @@ ${eventsContent}
         create: {
           userId: userId,
           provider: 'calendar',
-          status: 'connected',
+          status: 'pending',
           lastSyncedAt: new Date(),
-          syncEnabled: true,
+          syncEnabled: false,
           metadata: JSON.stringify({ email: calendarEmail }),
         },
         update: {
-          status: 'connected',
+          status: 'pending',
           lastSyncedAt: new Date(),
-          syncEnabled: true,
+          syncEnabled: false,
           metadata: JSON.stringify({ email: calendarEmail }),
         },
       })
 
       return NextResponse.redirect(new URL('/learning-sources?calendar_connected=true', request.url))
     } catch (error: any) {
-      console.error('Calendar sync error:', error)
-      return NextResponse.redirect(new URL('/learning-sources?error=calendar_sync_failed', request.url))
+      console.error('Calendar connection error:', error)
+      return NextResponse.redirect(new URL('/learning-sources?error=calendar_connection_failed', request.url))
     }
   } catch (error: any) {
     console.error('Calendar callback error:', error)
@@ -196,25 +158,8 @@ async function handleGmailCallback(request: NextRequest, userId: string, code: s
       },
     })
 
-    // Get user's setup state to find vault repo
-    const setupState = await prisma.setupState.findUnique({
-      where: { userId: userId },
-    })
-
-    if (!setupState?.vaultRepoName) {
-      return NextResponse.redirect(new URL('/learning-sources?error=no_vault', request.url))
-    }
-
-    // Get GitHub access token for writing to vault
-    const githubAccount = await prisma.account.findFirst({
-      where: { userId: userId, provider: 'github' },
-    })
-
-    if (!githubAccount?.access_token) {
-      return NextResponse.redirect(new URL('/learning-sources?error=no_github', request.url))
-    }
-
-    // Fetch Gmail messages and write to vault
+    // Gmail integration is currently unavailable without vault repo
+    // Just store the tokens for future use
     try {
       const gmailClient = new GmailClient(
         tokens.access_token,
@@ -223,68 +168,6 @@ async function handleGmailCallback(request: NextRequest, userId: string, code: s
 
       // Get user's email address
       const userEmail = await gmailClient.getUserEmail()
-
-      // Fetch messages (limit to 50 to avoid quota issues)
-      console.log('Fetching Gmail messages...')
-      const allMessages = await gmailClient.fetchAllMessages(50, 50)
-      console.log(`Fetched ${allMessages.length} total messages`)
-
-      const githubClient = new GitHubClient(githubAccount.access_token)
-
-      // Batch messages into files (50 per file)
-      const batchSize = 50
-      const batches: any[][] = []
-      for (let i = 0; i < allMessages.length; i += batchSize) {
-        batches.push(allMessages.slice(i, i + batchSize))
-      }
-
-      // Write each batch to a separate file
-      const filePromises = batches.map(async (batch, index) => {
-        const messagesContent = batch
-          .map(msg => gmailClient.formatMessageForVault(msg))
-          .join('\n\n---\n\n')
-
-        const fileName = index === 0 
-          ? 'integrations/gmail/messages.md'
-          : `integrations/gmail/messages-${index + 1}.md`
-
-        return githubClient.writeFileToVault(
-          setupState.vaultRepoName!,
-          fileName,
-          `# Gmail Messages (Batch ${index + 1} of ${batches.length})
-
-*Last synced: ${new Date().toISOString()}*
-*Total messages: ${allMessages.length}*
-*Messages in this batch: ${batch.length}*
-
-${messagesContent}
-`,
-          `Sync Gmail messages batch ${index + 1} to vault`
-        )
-      })
-
-      await Promise.all(filePromises)
-
-      // Create an index file
-      await githubClient.writeFileToVault(
-        setupState.vaultRepoName,
-        'integrations/gmail/index.md',
-        `# Gmail Integration
-
-**Connected Email:** ${userEmail}
-**Last Synced:** ${new Date().toISOString()}
-**Total Messages:** ${allMessages.length}
-**Files:** ${batches.length}
-
-## Message Files
-
-${batches.map((_, index) => {
-  const fileName = index === 0 ? 'messages.md' : `messages-${index + 1}.md`
-  return `- [${fileName}](./${fileName}) - ${batches[index].length} messages`
-}).join('\n')}
-`,
-        'Create Gmail integration index'
-      )
 
       // Create or update Integration record
       await prisma.integration.upsert({
@@ -297,23 +180,23 @@ ${batches.map((_, index) => {
         create: {
           userId: userId,
           provider: 'gmail',
-          status: 'connected',
+          status: 'pending',
           lastSyncedAt: new Date(),
-          syncEnabled: true,
+          syncEnabled: false,
           metadata: JSON.stringify({ email: userEmail }),
         },
         update: {
-          status: 'connected',
+          status: 'pending',
           lastSyncedAt: new Date(),
-          syncEnabled: true,
+          syncEnabled: false,
           metadata: JSON.stringify({ email: userEmail }),
         },
       })
 
       return NextResponse.redirect(new URL('/learning-sources?gmail_connected=true', request.url))
     } catch (error: any) {
-      console.error('Gmail sync error:', error)
-      return NextResponse.redirect(new URL('/learning-sources?error=gmail_sync_failed', request.url))
+      console.error('Gmail connection error:', error)
+      return NextResponse.redirect(new URL('/learning-sources?error=gmail_connection_failed', request.url))
     }
   } catch (error: any) {
     console.error('Gmail callback error:', error)

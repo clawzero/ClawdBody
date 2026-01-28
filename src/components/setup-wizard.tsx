@@ -30,9 +30,6 @@ type SetupStep =
 interface SetupStatus {
   status: string
   vmCreated: boolean
-  repoCreated: boolean
-  repoCloned: boolean
-  gitSyncConfigured: boolean
   clawdbotInstalled: boolean
   telegramConfigured: boolean
   gatewayStarted: boolean
@@ -47,7 +44,6 @@ interface SetupStatus {
   awsRegion?: string
   awsConsoleUrl?: string
   // Common fields
-  vaultRepoUrl?: string
   errorMessage?: string
 }
 
@@ -136,18 +132,10 @@ export function SetupWizard() {
             // Don't change step, just show error
           } else if (status.status === 'ready') {
             setCurrentStep('complete')
-          } else if (status.status === 'configuring_vm' || status.repoCloned) {
-            setCurrentStep('configuring_vm')
-          } else if (status.status === 'creating_repo') {
-            // Only show creating_repo step if status is actually 'creating_repo'
-            // (i.e., when creating a new repo)
-            setCurrentStep('creating_repo')
-          } else if (status.vmCreated && status.repoCreated) {
-            // If VM and repo are both created, skip to configuring_vm
+          } else if (status.status === 'configuring_vm') {
             setCurrentStep('configuring_vm')
           } else if (status.vmCreated) {
-            // VM created but repo not yet created - should be creating_repo
-            setCurrentStep('creating_repo')
+            setCurrentStep('configuring_vm')
           } else if (status.status === 'provisioning') {
             setCurrentStep('provisioning')
           } else {
@@ -165,7 +153,7 @@ export function SetupWizard() {
 
   // Poll for setup status during provisioning
   useEffect(() => {
-    if (currentStep === 'provisioning' || currentStep === 'creating_repo' || currentStep === 'configuring_vm') {
+    if (currentStep === 'provisioning' || currentStep === 'configuring_vm') {
       const interval = setInterval(async () => {
         try {
           const res = await fetch('/api/setup/status')
@@ -182,18 +170,8 @@ export function SetupWizard() {
               // Don't change step, just show error
             } else if (status.status === 'ready') {
               setCurrentStep('complete')
-            } else if (status.status === 'configuring_vm' || status.repoCloned) {
+            } else if (status.status === 'configuring_vm' || status.clawdbotInstalled) {
               setCurrentStep('configuring_vm')
-            } else if (status.status === 'creating_repo') {
-              // Only show creating_repo step if status is actually 'creating_repo'
-              // (i.e., when creating a new repo)
-              setCurrentStep('creating_repo')
-            } else if (status.vmCreated && status.repoCreated) {
-              // If VM and repo are both created, skip to configuring_vm
-              setCurrentStep('configuring_vm')
-            } else if (status.vmCreated) {
-              // VM created but repo not yet created - should be creating_repo
-              setCurrentStep('creating_repo')
             } else if (status.status === 'provisioning') {
               setCurrentStep('provisioning')
             }
@@ -209,13 +187,12 @@ export function SetupWizard() {
 
   const steps = [
     { id: 'provisioning', label: 'VM Setup', icon: Server },
-    { id: 'creating_repo', label: 'Vault Repo', icon: GitBranch },
     { id: 'configuring_vm', label: 'Configure', icon: Terminal },
     { id: 'complete', label: 'Ready', icon: CheckCircle2 },
   ]
 
   const getStepStatus = (stepId: string) => {
-    const stepOrder = ['provisioning', 'creating_repo', 'configuring_vm', 'complete']
+    const stepOrder = ['provisioning', 'configuring_vm', 'complete']
     const currentIndex = stepOrder.indexOf(currentStep)
     const stepIndex = stepOrder.indexOf(stepId)
     
@@ -300,7 +277,7 @@ export function SetupWizard() {
 
         {/* Step content */}
         <AnimatePresence mode="wait">
-          {(currentStep === 'provisioning' || currentStep === 'creating_repo' || currentStep === 'configuring_vm') && (
+          {(currentStep === 'provisioning' || currentStep === 'configuring_vm') && (
             <motion.div
               key="provisioning"
               initial={{ opacity: 0, y: 20 }}
@@ -484,57 +461,24 @@ export function SetupWizard() {
                     <div className="p-6 overflow-y-auto max-h-[calc(100vh-400px)]">
                       <div className="space-y-4">
                         <SetupTaskItem
-                          label={setupStatus?.vmProvider === 'aws' ? 'Creating AWS EC2 Instance' : 'Creating Orgo VM'}
-                          sublabel={setupStatus?.vmProvider === 'aws' 
-                            ? `Region: ${setupStatus?.awsRegion || 'us-east-1'}`
-                            : 'Project: claude-code'
-                          }
+                          label="Creating VM"
+                          sublabel={setupStatus?.vmProvider === 'aws' ? `AWS EC2 - ${setupStatus?.awsRegion || 'us-east-1'}` : setupStatus?.vmProvider === 'e2b' ? 'E2B Sandbox' : 'Orgo - Project: claude-code'}
                           status={setupStatus?.vmCreated ? 'complete' : currentStep === 'provisioning' ? 'running' : 'pending'}
                         />
                         <SetupTaskItem
-                          label="Creating vault repository"
-                          sublabel="Private GitHub repo with template"
-                          status={setupStatus?.repoCreated ? 'complete' : currentStep === 'creating_repo' ? 'running' : 'pending'}
-                        />
-                        <SetupTaskItem
                           label="Installing Python & tools"
-                          sublabel="Python3, Git, SSH client"
-                          status={setupStatus?.repoCloned ? 'complete' : (setupStatus?.vmCreated && currentStep === 'configuring_vm') ? 'running' : 'pending'}
+                          sublabel="Python3, essential tools"
+                          status={(setupStatus?.vmCreated && currentStep === 'configuring_vm') ? 'running' : setupStatus?.vmCreated ? 'complete' : 'pending'}
                         />
                         <SetupTaskItem
                           label="Installing AI SDKs"
                           sublabel="Anthropic SDK, Pillow, requests"
-                          status={setupStatus?.repoCloned ? 'complete' : (setupStatus?.vmCreated && currentStep === 'configuring_vm') ? 'running' : 'pending'}
-                        />
-                        <SetupTaskItem
-                          label="Generating SSH key"
-                          sublabel="ED25519 key for GitHub access"
-                          status={setupStatus?.repoCloned ? 'complete' : (setupStatus?.vmCreated && currentStep === 'configuring_vm') ? 'running' : 'pending'}
-                        />
-                        <SetupTaskItem
-                          label="Configuring Git"
-                          sublabel="User identity and SSH known hosts"
-                          status={setupStatus?.repoCloned ? 'complete' : (setupStatus?.vmCreated && currentStep === 'configuring_vm') ? 'running' : 'pending'}
-                        />
-                        <SetupTaskItem
-                          label="Cloning vault to VM"
-                          sublabel="Git clone to ~/vault"
-                          status={setupStatus?.repoCloned ? 'complete' : (setupStatus?.repoCreated && currentStep === 'configuring_vm') ? 'running' : 'pending'}
-                        />
-                        <SetupTaskItem
-                          label="Setting up Git sync"
-                          sublabel="Auto-sync with GitHub (cron)"
-                          status={setupStatus?.gitSyncConfigured ? 'complete' : (setupStatus?.repoCloned && currentStep === 'configuring_vm') ? 'running' : 'pending'}
+                          status={(setupStatus?.vmCreated && currentStep === 'configuring_vm') ? 'running' : setupStatus?.vmCreated ? 'complete' : 'pending'}
                         />
                         <SetupTaskItem
                           label="Installing Clawdbot"
                           sublabel="NVM + Node.js 22 + Clawdbot"
-                          status={setupStatus?.clawdbotInstalled ? 'complete' : (setupStatus?.gitSyncConfigured && currentStep === 'configuring_vm') ? 'running' : 'pending'}
-                        />
-                        <SetupTaskItem
-                          label="Linking vault to knowledge"
-                          sublabel="Symlink to /home/user/clawd/knowledge"
-                          status={setupStatus?.telegramConfigured ? 'complete' : (setupStatus?.clawdbotInstalled && currentStep === 'configuring_vm') ? 'running' : 'pending'}
+                          status={setupStatus?.clawdbotInstalled ? 'complete' : (setupStatus?.vmCreated && currentStep === 'configuring_vm') ? 'running' : 'pending'}
                         />
                         <SetupTaskItem
                           label="Configuring Telegram"
@@ -663,19 +607,6 @@ export function SetupWizard() {
                       <ExternalLink className="w-4 h-4 text-sam-text-dim" />
                     </a>
                   )}
-                  
-                  {setupStatus?.vaultRepoUrl && (
-                    <a
-                      href={setupStatus.vaultRepoUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-2 px-6 py-4 rounded-xl border border-sam-border bg-sam-surface hover:border-sam-accent transition-all"
-                    >
-                      <GitBranch className="w-5 h-5 text-sam-accent" />
-                      <span className="font-mono text-sm">Vault Repo</span>
-                      <ExternalLink className="w-4 h-4 text-sam-text-dim" />
-                    </a>
-                  )}
                 </div>
               </div>
 
@@ -754,19 +685,15 @@ export function SetupWizard() {
                 <ul className="space-y-3 text-sm text-sam-text-dim">
                   <li className="flex items-start gap-3">
                     <span className="text-sam-accent">1.</span>
-                    <span>Add tasks to <code className="text-sam-accent bg-sam-bg px-1 rounded">tasks.md</code> in your vault</span>
+                    <span>Your VM is ready and Clawdbot is installed</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <span className="text-sam-accent">2.</span>
-                    <span><a href="/learning-sources" className="text-sam-accent hover:underline">Connect learning sources</a> (Gmail, Calendar, Slack)</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="text-sam-accent">3.</span>
-                    <span>Watch ClawdeBot proactively handle your tasks</span>
+                    <span><a href="/learning-sources" className="text-sam-accent hover:underline">View learning sources</a> (currently unavailable)</span>
                   </li>
                   {setupStatus?.telegramConfigured && setupStatus?.gatewayStarted && (
                     <li className="flex items-start gap-3">
-                      <span className="text-sam-accent">4.</span>
+                      <span className="text-sam-accent">3.</span>
                       <span>Send a message to your Telegram bot to test the connection</span>
                     </li>
                   )}
@@ -808,25 +735,26 @@ function SetupTaskItem({
 
 function getTerminalText(step: SetupStep, status: SetupStatus | null): string {
   const isAWS = status?.vmProvider === 'aws'
+  const isE2B = status?.vmProvider === 'e2b'
   
   if (step === 'provisioning') {
-    return isAWS 
-      ? `aws ec2 run-instances --region ${status?.awsRegion || 'us-east-1'} --instance-type t3.micro`
-      : 'orgo compute create --project claude-code --os linux'
-  }
-  if (step === 'creating_repo') {
-    return 'gh repo create samantha-vault --private --template'
+    if (isAWS) {
+      return `aws ec2 run-instances --region ${status?.awsRegion || 'us-east-1'} --instance-type t3.micro`
+    } else if (isE2B) {
+      return 'e2b sandbox create --template base'
+    } else {
+      return 'orgo compute create --project claude-code --os linux'
+    }
   }
   if (step === 'configuring_vm') {
     if (status?.gatewayStarted) return 'clawdbot gateway run'
     if (status?.telegramConfigured) return 'nohup /tmp/start-clawdbot.sh &'
-    if (status?.clawdbotInstalled) return 'cat > ~/.clawdbot/clawdbot.json'
-    if (status?.gitSyncConfigured) return 'npm install -g clawdbot@latest'
-    if (status?.repoCloned) return 'crontab -e # setup git sync'
-    if (status?.repoCreated) return 'git clone git@github.com:user/samantha-vault.git ~/vault'
-    if (status?.vmCreated) return 'sudo apt-get install -y python3 git openssh-client'
+    if (status?.clawdbotInstalled) return 'npm install -g clawdbot@latest'
+    if (status?.vmCreated) return 'sudo apt-get install -y python3 pip'
     return isAWS 
       ? 'Connecting to EC2 instance via SSH...'
+      : isE2B
+      ? 'Initializing E2B sandbox...'
       : 'Waiting for VM to be ready...'
   }
   return 'echo "Setup complete!"'

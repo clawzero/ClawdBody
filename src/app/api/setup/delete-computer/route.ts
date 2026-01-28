@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { OrgoClient } from '@/lib/orgo'
 import { AWSClient } from '@/lib/aws'
@@ -115,9 +115,6 @@ export async function POST(request: NextRequest) {
             awsPrivateKey = NULL,
             vmStatus = NULL,
             vmCreated = 0,
-            repoCreated = 0,
-            repoCloned = 0,
-            gitSyncConfigured = 0,
             clawdbotInstalled = 0,
             telegramConfigured = 0,
             gatewayStarted = 0,
@@ -183,9 +180,6 @@ export async function POST(request: NextRequest) {
             orgoComputerUrl: null,
             vmStatus: null,
             vmCreated: false,
-            repoCreated: false,
-            repoCloned: false,
-            gitSyncConfigured: false,
             clawdbotInstalled: false,
             telegramConfigured: false,
             gatewayStarted: false,

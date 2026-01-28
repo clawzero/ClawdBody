@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { OrgoClient, generateComputerName } from '@/lib/orgo'
 import { AWSClient, generateInstanceName } from '@/lib/aws'
 import { E2BClient, generateSandboxName } from '@/lib/e2b'
-import { GitHubClient } from '@/lib/github'
 import { VMSetup } from '@/lib/vm-setup'
 import { AWSVMSetup } from '@/lib/aws-vm-setup'
 import { E2BVMSetup } from '@/lib/e2b-vm-setup'
@@ -95,9 +94,6 @@ export async function POST(request: NextRequest) {
           status: 'provisioning',
           errorMessage: null,
           vmCreated: false,
-          repoCreated: false,
-          repoCloned: false,
-          gitSyncConfigured: false,
           clawdbotInstalled: false,
           telegramConfigured: false,
           gatewayStarted: false,
@@ -113,8 +109,6 @@ export async function POST(request: NextRequest) {
           status: 'provisioning',
           errorMessage: null,
           vmCreated: false,
-          repoCloned: false,
-          gitSyncConfigured: false,
           clawdbotInstalled: false,
           gatewayStarted: false,
         },
@@ -200,17 +194,12 @@ async function runSetupProcess(
   const updateStatus = async (updates: Partial<{
     status: string
     vmCreated: boolean
-    repoCreated: boolean
-    repoCloned: boolean
-    gitSyncConfigured: boolean
     clawdbotInstalled: boolean
     telegramConfigured: boolean
     gatewayStarted: boolean
     orgoProjectId: string
     orgoComputerId: string
     orgoComputerUrl: string
-    vaultRepoName: string
-    vaultRepoUrl: string
     vmStatus: string
     errorMessage: string
   }>) => {
@@ -225,8 +214,6 @@ async function runSetupProcess(
       const vmUpdates: Record<string, unknown> = {}
       if (updates.status !== undefined) vmUpdates.status = updates.status
       if (updates.vmCreated !== undefined) vmUpdates.vmCreated = updates.vmCreated
-      if (updates.repoCloned !== undefined) vmUpdates.repoCloned = updates.repoCloned
-      if (updates.gitSyncConfigured !== undefined) vmUpdates.gitSyncConfigured = updates.gitSyncConfigured
       if (updates.clawdbotInstalled !== undefined) vmUpdates.clawdbotInstalled = updates.clawdbotInstalled
       if (updates.telegramConfigured !== undefined) vmUpdates.telegramConfigured = updates.telegramConfigured
       if (updates.gatewayStarted !== undefined) vmUpdates.gatewayStarted = updates.gatewayStarted
@@ -245,7 +232,7 @@ async function runSetupProcess(
   }
 
   try {
-    // Get setup state to check for existing vault
+    // Get setup state
     const setupState = await prisma.setupState.findUnique({
       where: { userId },
     })
@@ -258,17 +245,7 @@ async function runSetupProcess(
       })
     }
 
-    // Get GitHub access token
-    const account = await prisma.account.findFirst({
-      where: { userId, provider: 'github' },
-    })
-
-    if (!account?.access_token) {
-      throw new Error('GitHub account not connected')
-    }
-
     const user = await prisma.user.findUnique({ where: { id: userId } })
-    const githubClient = new GitHubClient(account.access_token)
     const orgoClient = new OrgoClient(orgoApiKey)
 
     let computer: any
@@ -395,54 +372,7 @@ async function runSetupProcess(
     
     await updateStatus({ vmCreated: true, vmStatus: 'running' })
 
-    // 2. Use existing GitHub vault repository or create new one
-    const githubUser = await githubClient.getUser()
-    let vaultRepoName: string | undefined
-    let vaultRepoUrl: string | undefined
-    let vaultSshUrl: string | undefined
-
-    if (setupState?.vaultRepoName && setupState?.vaultRepoUrl) {
-      // Use existing vault repository
-      console.log(`Using existing vault repository: ${setupState.vaultRepoName}`)
-      
-      // Verify the repo still exists on GitHub
-      const repoExists = await githubClient.repoExists(setupState.vaultRepoName)
-      if (repoExists) {
-        vaultRepoName = setupState.vaultRepoName
-        vaultRepoUrl = setupState.vaultRepoUrl
-        // Construct SSH URL: git@github.com:username/repo.git
-        vaultSshUrl = `git@github.com:${githubUser.login}/${vaultRepoName}.git`
-        
-        await updateStatus({
-          repoCreated: true,
-          vaultRepoName,
-          vaultRepoUrl,
-        })
-        // Skip 'creating_repo' status since repo already exists
-      } else {
-        console.warn(`Vault repo ${setupState.vaultRepoName} not found on GitHub, creating new one.`)
-      }
-    }
-
-    // Create new vault repository if one doesn't exist
-    if (!vaultRepoName) {
-      console.log('Creating new vault repository...')
-      // Only set status to 'creating_repo' when actually creating a new repo
-      await updateStatus({ status: 'creating_repo' })
-      
-      const vaultRepo = await githubClient.createVaultRepo(`samantha-vault-${Date.now().toString(36)}`)
-      vaultRepoName = vaultRepo.name
-      vaultRepoUrl = vaultRepo.url
-      vaultSshUrl = vaultRepo.sshUrl
-      
-      await updateStatus({
-        repoCreated: true,
-        vaultRepoName,
-        vaultRepoUrl,
-      })
-    }
-
-    // 3. Configure VM
+    // 2. Configure VM
     console.log('Configuring VM...')
     await updateStatus({ status: 'configuring_vm' })
 
@@ -450,7 +380,7 @@ async function runSetupProcess(
       console.log(`[VM Setup] ${progress.step}: ${progress.message}`)
     })
 
-    // Install Python and essential tools (including openssh-client)
+    // Install Python and essential tools
     console.log('Installing Python and essential tools...')
     const pythonSuccess = await vmSetup.installPython()
     if (!pythonSuccess) {
@@ -464,38 +394,6 @@ async function runSetupProcess(
       console.warn('SDK installation had issues, continuing...')
     }
 
-    // Generate SSH key on VM (openssh-client should now be installed)
-    console.log('Generating SSH key for GitHub access...')
-    const { publicKey, success: sshKeySuccess } = await vmSetup.generateSSHKey()
-    if (!sshKeySuccess || !publicKey) {
-      throw new Error('Failed to generate SSH key on VM')
-    }
-    
-    // Ensure vaultRepoName is defined
-    if (!vaultRepoName) {
-      throw new Error('Vault repository name is not set')
-    }
-    
-    // Add deploy key to GitHub repo
-    await githubClient.createDeployKey(vaultRepoName, publicKey)
-
-    // Configure git and clone repo
-    await vmSetup.configureGit(githubUser.login, githubUser.email || `${githubUser.login}@users.noreply.github.com`)
-    
-    if (!vaultSshUrl) {
-      throw new Error('Failed to get vault SSH URL')
-    }
-    
-    const cloneSuccess = await vmSetup.cloneVaultRepo(vaultSshUrl)
-    if (!cloneSuccess) {
-      throw new Error('Failed to clone vault repository to VM')
-    }
-    await updateStatus({ repoCloned: true })
-
-    // Set up Git sync
-    await vmSetup.setupGitSync()
-    await updateStatus({ gitSyncConfigured: true })
-
     // Install Clawdbot (NVM + Node.js 22 + Clawdbot)
     console.log('Installing Clawdbot...')
     const clawdbotResult = await vmSetup.installClawdbot()
@@ -503,16 +401,6 @@ async function runSetupProcess(
       throw new Error('Failed to install Clawdbot')
     }
     await updateStatus({ clawdbotInstalled: true })
-
-    // Link vault to Clawdbot knowledge directory
-    console.log('Linking vault to Clawdbot knowledge directory...')
-    const linkSuccess = await vmSetup.linkVaultToKnowledge()
-    if (!linkSuccess) {
-      throw new Error('Failed to link vault to knowledge directory')
-    }
-
-    // Clone pending GitHub repositories if any
-    await clonePendingGitHubRepositories(userId, orgoApiKey, computer.id, githubClient, setupState)
 
     // Configure Clawdbot with Telegram if token is provided (from UI or env)
     const finalTelegramToken = telegramBotToken || process.env.TELEGRAM_BOT_TOKEN
@@ -559,120 +447,6 @@ async function runSetupProcess(
   }
 }
 
-/**
- * Clone pending GitHub repositories after VM is ready
- */
-async function clonePendingGitHubRepositories(
-  userId: string,
-  orgoApiKey: string,
-  computerId: string,
-  githubClient: GitHubClient,
-  setupState: SetupState | null
-) {
-  try {
-    // Check if there's a GitHub integration with pending repositories
-    const githubIntegration = await prisma.integration.findUnique({
-      where: {
-        userId_provider: {
-          userId,
-          provider: 'github',
-        },
-      },
-    })
-
-    if (!githubIntegration || githubIntegration.status !== 'pending') {
-      return // No pending repositories
-    }
-
-    // Parse metadata to get repository details
-    let repoDetails: Array<{ full_name: string; name: string; ssh_url: string; html_url: string; private: boolean }> = []
-    try {
-      const metadata = JSON.parse(githubIntegration.metadata || '{}')
-      if (metadata.repoDetails && Array.isArray(metadata.repoDetails)) {
-        repoDetails = metadata.repoDetails
-      }
-    } catch (e) {
-      console.error('Failed to parse GitHub integration metadata:', e)
-      return
-    }
-
-    if (repoDetails.length === 0) {
-      return // No repositories to clone
-    }
-
-    console.log(`Cloning ${repoDetails.length} pending GitHub repositories...`)
-
-    // Clone repositories on VM
-    const orgoClient = new OrgoClient(orgoApiKey)
-    const vmSetup = new VMSetup(orgoClient, computerId)
-
-    const cloneResult = await vmSetup.cloneRepositories(
-      repoDetails.map(repo => ({
-        name: repo.name,
-        sshUrl: repo.ssh_url,
-      }))
-    )
-
-    // Update vault file with repository information
-    if (setupState?.vaultRepoName) {
-      const reposContent = `# GitHub Repositories Integration
-
-*Last updated: ${new Date().toISOString()}*
-*Total repositories: ${repoDetails.length}*
-
-## Connected Repositories
-
-${repoDetails.map((repo, index) => {
-  const repoPath = `~/repositories/${repo.name}`
-  return `### ${index + 1}. ${repo.name}
-
-- **Full Name:** ${repo.full_name}
-- **Private:** ${repo.private ? 'Yes' : 'No'}
-- **Path on VM:** \`${repoPath}\`
-- **GitHub URL:** [${repo.html_url}](${repo.html_url})
-- **SSH URL:** \`${repo.ssh_url}\`
-- **Added:** ${new Date().toISOString()}
-`
-}).join('\n')}
-
-## Usage
-
-These repositories are cloned in the \`~/repositories/\` directory on the VM and can be accessed by the AI agent as data sources.
-`
-
-      await githubClient.writeFileToVault(
-        setupState.vaultRepoName!,
-        'integrations/github/repositories.md',
-        reposContent,
-        'Add GitHub repositories as data sources'
-      )
-    }
-
-    // Update integration status from pending to connected
-    await prisma.integration.update({
-      where: { id: githubIntegration.id },
-      data: {
-        status: 'connected',
-        lastSyncedAt: new Date(),
-        metadata: JSON.stringify({
-          repositories: repoDetails.map(r => r.full_name),
-          paths: repoDetails.map(r => `~/repositories/${r.name}`),
-          repoDetails,
-          pending: false,
-        }),
-      },
-    })
-
-    if (cloneResult.errors && cloneResult.errors.length > 0) {
-      console.warn('Some repositories failed to clone:', cloneResult.errors)
-    } else {
-      console.log(`Successfully cloned ${repoDetails.length} GitHub repositories`)
-    }
-  } catch (error) {
-    console.error('Error cloning pending GitHub repositories:', error)
-    // Don't throw - this shouldn't block setup completion
-  }
-}
 
 /**
  * AWS EC2 Setup Process
@@ -691,9 +465,6 @@ async function runAWSSetupProcess(
   const updateStatus = async (updates: Partial<{
     status: string
     vmCreated: boolean
-    repoCreated: boolean
-    repoCloned: boolean
-    gitSyncConfigured: boolean
     clawdbotInstalled: boolean
     telegramConfigured: boolean
     gatewayStarted: boolean
@@ -701,8 +472,6 @@ async function runAWSSetupProcess(
     awsInstanceName: string
     awsPublicIp: string
     awsPrivateKey: string
-    vaultRepoName: string
-    vaultRepoUrl: string
     vmStatus: string
     errorMessage: string
   }>) => {
@@ -717,8 +486,6 @@ async function runAWSSetupProcess(
       const vmUpdates: Record<string, unknown> = {}
       if (updates.status !== undefined) vmUpdates.status = updates.status
       if (updates.vmCreated !== undefined) vmUpdates.vmCreated = updates.vmCreated
-      if (updates.repoCloned !== undefined) vmUpdates.repoCloned = updates.repoCloned
-      if (updates.gitSyncConfigured !== undefined) vmUpdates.gitSyncConfigured = updates.gitSyncConfigured
       if (updates.clawdbotInstalled !== undefined) vmUpdates.clawdbotInstalled = updates.clawdbotInstalled
       if (updates.telegramConfigured !== undefined) vmUpdates.telegramConfigured = updates.telegramConfigured
       if (updates.gatewayStarted !== undefined) vmUpdates.gatewayStarted = updates.gatewayStarted
@@ -745,17 +512,7 @@ async function runAWSSetupProcess(
       where: { userId },
     })
 
-    // Get GitHub access token
-    const account = await prisma.account.findFirst({
-      where: { userId, provider: 'github' },
-    })
-
-    if (!account?.access_token) {
-      throw new Error('GitHub account not connected')
-    }
-
     const user = await prisma.user.findUnique({ where: { id: userId } })
-    const githubClient = new GitHubClient(account.access_token)
     const awsClient = new AWSClient({
       accessKeyId: awsAccessKeyId,
       secretAccessKey: awsSecretAccessKey,
@@ -795,46 +552,7 @@ async function runAWSSetupProcess(
 
     console.log(`EC2 instance ${instance.id} is running at ${updatedInstance.publicIp}`)
 
-    // 2. Use existing GitHub vault repository or create new one
-    const githubUser = await githubClient.getUser()
-    let vaultRepoName: string | undefined
-    let vaultRepoUrl: string | undefined
-    let vaultSshUrl: string | undefined
-
-    if (setupState?.vaultRepoName && setupState?.vaultRepoUrl) {
-      console.log(`Using existing vault repository: ${setupState.vaultRepoName}`)
-      
-      const repoExists = await githubClient.repoExists(setupState.vaultRepoName)
-      if (repoExists) {
-        vaultRepoName = setupState.vaultRepoName
-        vaultRepoUrl = setupState.vaultRepoUrl
-        vaultSshUrl = `git@github.com:${githubUser.login}/${vaultRepoName}.git`
-        
-        await updateStatus({
-          repoCreated: true,
-          vaultRepoName,
-          vaultRepoUrl,
-        })
-      }
-    }
-
-    if (!vaultRepoName) {
-      console.log('Creating new vault repository...')
-      await updateStatus({ status: 'creating_repo' })
-      
-      const vaultRepo = await githubClient.createVaultRepo(`samantha-vault-${Date.now().toString(36)}`)
-      vaultRepoName = vaultRepo.name
-      vaultRepoUrl = vaultRepo.url
-      vaultSshUrl = vaultRepo.sshUrl
-      
-      await updateStatus({
-        repoCreated: true,
-        vaultRepoName,
-        vaultRepoUrl,
-      })
-    }
-
-    // 3. Configure VM
+    // 2. Configure VM
     console.log('Configuring EC2 instance...')
     await updateStatus({ status: 'configuring_vm' })
 
@@ -859,37 +577,6 @@ async function runAWSSetupProcess(
     console.log('Installing Anthropic SDKs...')
     await awsVMSetup.installAnthropicSDK()
 
-    // Generate SSH key on VM
-    console.log('Generating SSH key for GitHub access...')
-    const { publicKey, success: sshKeySuccess } = await awsVMSetup.generateSSHKey()
-    if (!sshKeySuccess || !publicKey) {
-      throw new Error('Failed to generate SSH key on VM')
-    }
-
-    if (!vaultRepoName) {
-      throw new Error('Vault repository name is not set')
-    }
-
-    // Add deploy key to GitHub repo
-    await githubClient.createDeployKey(vaultRepoName, publicKey)
-
-    // Configure git and clone repo
-    await awsVMSetup.configureGit(githubUser.login, githubUser.email || `${githubUser.login}@users.noreply.github.com`)
-
-    if (!vaultSshUrl) {
-      throw new Error('Failed to get vault SSH URL')
-    }
-
-    const cloneSuccess = await awsVMSetup.cloneVaultRepo(vaultSshUrl)
-    if (!cloneSuccess) {
-      throw new Error('Failed to clone vault repository to VM')
-    }
-    await updateStatus({ repoCloned: true })
-
-    // Set up Git sync
-    await awsVMSetup.setupGitSync()
-    await updateStatus({ gitSyncConfigured: true })
-
     // Install Clawdbot
     console.log('Installing Clawdbot...')
     const clawdbotResult = await awsVMSetup.installClawdbot()
@@ -897,10 +584,6 @@ async function runAWSSetupProcess(
       throw new Error('Failed to install Clawdbot')
     }
     await updateStatus({ clawdbotInstalled: true })
-
-    // Link vault to Clawdbot knowledge directory
-    console.log('Linking vault to Clawdbot knowledge directory...')
-    await awsVMSetup.linkVaultToKnowledge()
 
     // Configure Clawdbot with Telegram if token is provided
     const finalTelegramToken = telegramBotToken || process.env.TELEGRAM_BOT_TOKEN
@@ -977,14 +660,9 @@ async function runE2BSetupProcess(
   const updateStatus = async (updates: Partial<{
     status: string
     vmCreated: boolean
-    repoCreated: boolean
-    repoCloned: boolean
-    gitSyncConfigured: boolean
     clawdbotInstalled: boolean
     telegramConfigured: boolean
     gatewayStarted: boolean
-    vaultRepoName: string
-    vaultRepoUrl: string
     vmStatus: string
     errorMessage: string
   }>) => {
@@ -999,8 +677,6 @@ async function runE2BSetupProcess(
       const vmUpdates: Record<string, unknown> = {}
       if (updates.status !== undefined) vmUpdates.status = updates.status
       if (updates.vmCreated !== undefined) vmUpdates.vmCreated = updates.vmCreated
-      if (updates.repoCloned !== undefined) vmUpdates.repoCloned = updates.repoCloned
-      if (updates.gitSyncConfigured !== undefined) vmUpdates.gitSyncConfigured = updates.gitSyncConfigured
       if (updates.clawdbotInstalled !== undefined) vmUpdates.clawdbotInstalled = updates.clawdbotInstalled
       if (updates.telegramConfigured !== undefined) vmUpdates.telegramConfigured = updates.telegramConfigured
       if (updates.gatewayStarted !== undefined) vmUpdates.gatewayStarted = updates.gatewayStarted
@@ -1023,17 +699,7 @@ async function runE2BSetupProcess(
       where: { userId },
     })
 
-    // Get GitHub access token
-    const account = await prisma.account.findFirst({
-      where: { userId, provider: 'github' },
-    })
-
-    if (!account?.access_token) {
-      throw new Error('GitHub account not connected')
-    }
-
     const user = await prisma.user.findUnique({ where: { id: userId } })
-    const githubClient = new GitHubClient(account.access_token)
     const e2bClient = new E2BClient(e2bApiKey)
 
     // 1. Create E2B Sandbox
@@ -1063,46 +729,7 @@ async function runE2BSetupProcess(
 
     console.log(`E2B sandbox ${sandboxId} is running`)
 
-    // 2. Use existing GitHub vault repository or create new one
-    const githubUser = await githubClient.getUser()
-    let vaultRepoName: string | undefined
-    let vaultRepoUrl: string | undefined
-    let vaultSshUrl: string | undefined
-
-    if (setupState?.vaultRepoName && setupState?.vaultRepoUrl) {
-      console.log(`Using existing vault repository: ${setupState.vaultRepoName}`)
-      
-      const repoExists = await githubClient.repoExists(setupState.vaultRepoName)
-      if (repoExists) {
-        vaultRepoName = setupState.vaultRepoName
-        vaultRepoUrl = setupState.vaultRepoUrl
-        vaultSshUrl = `git@github.com:${githubUser.login}/${vaultRepoName}.git`
-        
-        await updateStatus({
-          repoCreated: true,
-          vaultRepoName,
-          vaultRepoUrl,
-        })
-      }
-    }
-
-    if (!vaultRepoName) {
-      console.log('Creating new vault repository...')
-      await updateStatus({ status: 'creating_repo' })
-      
-      const vaultRepo = await githubClient.createVaultRepo(`samantha-vault-${Date.now().toString(36)}`)
-      vaultRepoName = vaultRepo.name
-      vaultRepoUrl = vaultRepo.url
-      vaultSshUrl = vaultRepo.sshUrl
-      
-      await updateStatus({
-        repoCreated: true,
-        vaultRepoName,
-        vaultRepoUrl,
-      })
-    }
-
-    // 3. Configure sandbox
+    // 2. Configure sandbox
     console.log('Configuring E2B sandbox...')
     await updateStatus({ status: 'configuring_vm' })
 
@@ -1119,37 +746,6 @@ async function runE2BSetupProcess(
     console.log('Installing essential tools...')
     await e2bVMSetup.installEssentials()
 
-    // Generate SSH key on sandbox
-    console.log('Generating SSH key for GitHub access...')
-    const { publicKey, success: sshKeySuccess } = await e2bVMSetup.generateSSHKey()
-    if (!sshKeySuccess || !publicKey) {
-      throw new Error('Failed to generate SSH key on sandbox')
-    }
-
-    if (!vaultRepoName) {
-      throw new Error('Vault repository name is not set')
-    }
-
-    // Add deploy key to GitHub repo
-    await githubClient.createDeployKey(vaultRepoName, publicKey)
-
-    // Configure git and clone repo
-    await e2bVMSetup.configureGit(githubUser.login, githubUser.email || `${githubUser.login}@users.noreply.github.com`)
-
-    if (!vaultSshUrl) {
-      throw new Error('Failed to get vault SSH URL')
-    }
-
-    const cloneSuccess = await e2bVMSetup.cloneVaultRepo(vaultSshUrl)
-    if (!cloneSuccess) {
-      throw new Error('Failed to clone vault repository to sandbox')
-    }
-    await updateStatus({ repoCloned: true })
-
-    // Set up Git sync
-    await e2bVMSetup.setupGitSync()
-    await updateStatus({ gitSyncConfigured: true })
-
     // Install Clawdbot
     console.log('Installing Clawdbot...')
     const clawdbotResult = await e2bVMSetup.installClawdbot()
@@ -1157,10 +753,6 @@ async function runE2BSetupProcess(
       throw new Error('Failed to install Clawdbot')
     }
     await updateStatus({ clawdbotInstalled: true })
-
-    // Link vault to Clawdbot knowledge directory
-    console.log('Linking vault to Clawdbot knowledge directory...')
-    await e2bVMSetup.linkVaultToKnowledge()
 
     // Configure Clawdbot with Telegram if token is provided
     const finalTelegramToken = telegramBotToken || process.env.TELEGRAM_BOT_TOKEN

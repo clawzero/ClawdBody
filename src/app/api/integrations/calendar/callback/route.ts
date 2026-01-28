@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { GitHubClient } from '@/lib/github'
 import { CalendarClient, getCalendarTokens } from '@/lib/calendar'
@@ -54,83 +54,30 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // Get user's setup state to find vault repo
-    const setupState = await prisma.setupState.findUnique({
-      where: { userId: session.user.id },
-    })
-
-    if (!setupState?.vaultRepoName) {
-      return NextResponse.redirect(new URL('/learning-sources?error=no_vault', request.url))
-    }
-
-    // Get GitHub access token for writing to vault
-    const githubAccount = await prisma.account.findFirst({
-      where: { userId: session.user.id, provider: 'github' },
-    })
-
-    if (!githubAccount?.access_token) {
-      return NextResponse.redirect(new URL('/learning-sources?error=no_github', request.url))
-    }
-
-    // Fetch calendar events and write to vault
-    try {
-      const calendarClient = new CalendarClient(
-        tokens.access_token,
-        tokens.refresh_token
-      )
-
-      const calendarEmail = await calendarClient.getUserCalendarEmail()
-      const events = await calendarClient.fetchEvents(50)
-      const githubClient = new GitHubClient(githubAccount.access_token)
-
-      // Format events for vault
-      const eventsContent = events
-        .map(event => calendarClient.formatEventForVault(event))
-        .join('\n\n---\n\n')
-
-      // Write to vault
-      await githubClient.writeFileToVault(
-        setupState.vaultRepoName!,
-        'integrations/calendar/events.md',
-        `# Google Calendar Events
-
-*Last synced: ${new Date().toISOString()}*
-*Calendar: ${calendarEmail}*
-
-${eventsContent}
-`,
-        'Sync calendar events to vault'
-      )
-
-      // Create or update Integration record
-      await prisma.integration.upsert({
-        where: {
-          userId_provider: {
-            userId: session.user.id,
-            provider: 'calendar',
-          },
-        },
-        create: {
+    // Calendar integration is currently unavailable without vault repository
+    // Just mark as pending for now
+    await prisma.integration.upsert({
+      where: {
+        userId_provider: {
           userId: session.user.id,
           provider: 'calendar',
-          status: 'connected',
-          lastSyncedAt: new Date(),
-          syncEnabled: true,
-          metadata: JSON.stringify({ email: calendarEmail }),
         },
-        update: {
-          status: 'connected',
-          lastSyncedAt: new Date(),
-          syncEnabled: true,
-          metadata: JSON.stringify({ email: calendarEmail }),
-        },
-      })
+      },
+      create: {
+        userId: session.user.id,
+        provider: 'calendar',
+        status: 'pending',
+        lastSyncedAt: new Date(),
+        syncEnabled: false,
+      },
+      update: {
+        status: 'pending',
+        lastSyncedAt: new Date(),
+        syncEnabled: false,
+      },
+    })
 
-      return NextResponse.redirect(new URL('/learning-sources?calendar_connected=true', request.url))
-    } catch (error: any) {
-      console.error('Calendar sync error:', error)
-      return NextResponse.redirect(new URL('/learning-sources?error=calendar_sync_failed', request.url))
-    }
+    return NextResponse.redirect(new URL('/learning-sources?calendar_connected=true', request.url))
 
   } catch (error: any) {
     console.error('Calendar callback error:', error)

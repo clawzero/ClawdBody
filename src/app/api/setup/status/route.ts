@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import type { SetupState } from '@prisma/client'
 
@@ -38,21 +38,12 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'VM not found' }, { status: 404 })
       }
 
-      // Get SetupState for shared fields like vaultRepoUrl and repoCreated
-      const setupState = await prisma.setupState.findUnique({
-        where: { userId: session.user.id },
-      })
-
       const response: Record<string, unknown> = {
         status: vm.status,
         vmCreated: vm.vmCreated,
-        repoCreated: setupState?.repoCreated || false,
-        repoCloned: vm.repoCloned,
-        gitSyncConfigured: vm.gitSyncConfigured,
         clawdbotInstalled: vm.clawdbotInstalled,
         telegramConfigured: vm.telegramConfigured || false,
         gatewayStarted: vm.gatewayStarted,
-        vaultRepoUrl: setupState?.vaultRepoUrl,
         errorMessage: vm.errorMessage,
         vmProvider: vm.provider,
         vmId: vm.id,
@@ -91,9 +82,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         status: 'pending',
         vmCreated: false,
-        repoCreated: false,
-        repoCloned: false,
-        gitSyncConfigured: false,
         clawdbotInstalled: false,
         telegramConfigured: false,
         gatewayStarted: false,
@@ -105,13 +93,9 @@ export async function GET(request: NextRequest) {
     const response: Record<string, unknown> = {
       status: setupState.status,
       vmCreated: setupState.vmCreated,
-      repoCreated: setupState.repoCreated,
-      repoCloned: setupState.repoCloned,
-      gitSyncConfigured: setupState.gitSyncConfigured,
       clawdbotInstalled: setupState.clawdbotInstalled,
       telegramConfigured: setupState.telegramConfigured,
       gatewayStarted: setupState.gatewayStarted,
-      vaultRepoUrl: setupState.vaultRepoUrl,
       errorMessage: setupState.errorMessage,
       vmProvider: setupState.vmProvider,
     }

@@ -95,15 +95,8 @@ model SetupState {
   awsPublicIp     String?
   awsPrivateKey   String?
 
-  // GitHub vault repo
-  vaultRepoName String?
-  vaultRepoUrl  String?
-
   // Setup steps completed
   vmCreated          Boolean @default(false)
-  repoCreated        Boolean @default(false)
-  repoCloned         Boolean @default(false)
-  gitSyncConfigured  Boolean @default(false)
   clawdbotInstalled  Boolean @default(false)
   telegramConfigured Boolean @default(false)
   gatewayStarted     Boolean @default(false)
@@ -153,8 +146,6 @@ model VM {
 
   // Setup state for this VM
   vmCreated          Boolean @default(false)
-  repoCloned         Boolean @default(false)
-  gitSyncConfigured  Boolean @default(false)
   clawdbotInstalled  Boolean @default(false)
   telegramConfigured Boolean @default(false)
   gatewayStarted     Boolean @default(false)
