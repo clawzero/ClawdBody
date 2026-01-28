@@ -829,11 +829,44 @@ function LearningSourcesContent() {
           )}
         </motion.div>
 
-        {/* Header */}
+        {/* Development Notice */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
+          className="mb-8"
+        >
+          <div className="p-6 rounded-2xl border border-yellow-500/30 bg-yellow-500/5 backdrop-blur flex items-center gap-4">
+            <img 
+              src="/logos/ClawdBodySorry.png" 
+              alt="ClawdBody" 
+              className="w-16 h-16 md:w-20 md:h-20 object-contain flex-shrink-0"
+            />
+            <div className="flex-1">
+              <h3 className="text-base font-display font-semibold text-sam-text mb-2">Feedback</h3>
+              <p className="text-sam-text text-sm leading-relaxed">
+                Clawdbot is still actively in development and might be rough around the edges. 
+                If you face any issues, please{' '}
+                <a 
+                  href="https://github.com/Prakshal-Jain/ClawdBody/issues/new" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-sam-accent hover:underline font-medium inline-flex items-center gap-1"
+                >
+                  report them here
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+                .
+              </p>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.1 }}
           className="mb-12"
         >
           <h1 className="text-4xl md:text-5xl font-display font-bold mb-4 text-sam-text leading-tight">
