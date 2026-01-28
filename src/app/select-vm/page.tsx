@@ -83,29 +83,25 @@ interface OrgoRAMOption {
   recommended?: boolean
 }
 
-interface OrgoCPUOption {
-  id: number
-  name: string
-  description: string
-}
-
 const orgoRAMOptions: OrgoRAMOption[] = [
-  { id: 1, name: '1 GB', description: 'Light tasks', freeTier: true },
-  { id: 2, name: '2 GB', description: 'Basic tasks', freeTier: true },
+  { id: 2, name: '2 GB', description: 'Light tasks', freeTier: true },
   { id: 4, name: '4 GB', description: 'Standard workloads', freeTier: true },
-  { id: 8, name: '8 GB', description: 'AI & development', freeTier: false, recommended: true },
-  { id: 16, name: '16 GB', description: 'Heavy workloads', freeTier: false },
-  { id: 32, name: '32 GB', description: 'Large datasets', freeTier: false },
-  { id: 64, name: '64 GB', description: 'Enterprise scale', freeTier: false },
+  { id: 8, name: '8 GB', description: 'AI & development', freeTier: true },
+  { id: 16, name: '16 GB', description: 'Heavy workloads', freeTier: false, recommended: true }, // Requires Pro plan
+  { id: 32, name: '32 GB', description: 'Large datasets', freeTier: false },  // Requires Pro plan
 ]
 
-const orgoCPUOptions: OrgoCPUOption[] = [
-  { id: 1, name: '1 Core', description: 'Light tasks' },
-  { id: 2, name: '2 Cores', description: 'Standard tasks' },
-  { id: 4, name: '4 Cores', description: 'Multi-threaded' },
-  { id: 8, name: '8 Cores', description: 'Heavy compute' },
-  { id: 16, name: '16 Cores', description: 'Maximum power' },
-]
+// Auto-select CPU cores based on RAM
+const getOrgoCPUForRAM = (ram: number): number => {
+  switch (ram) {
+    case 2: return 1
+    case 4: return 2
+    case 8: return 4
+    case 16: return 4 // Could also be 8, needs testing
+    case 32: return 8
+    default: return 2
+  }
+}
 
 const vmOptions: VMOption[] = [
   {
@@ -205,8 +201,7 @@ export default function SelectVMPage() {
   const [isCreatingProject, setIsCreatingProject] = useState(false)
   const [orgoError, setOrgoError] = useState<string | null>(null)
   const [orgoVMName, setOrgoVMName] = useState('')
-  const [selectedOrgoRAM, setSelectedOrgoRAM] = useState(8) // Default 8 GB (recommended)
-  const [selectedOrgoCPU, setSelectedOrgoCPU] = useState(2) // Default 2 cores
+  const [selectedOrgoRAM, setSelectedOrgoRAM] = useState(16) // Default 16 GB (recommended)
 
   // AWS configuration modal state
   const [showAWSModal, setShowAWSModal] = useState(false)
@@ -490,46 +485,44 @@ export default function SelectVMPage() {
       return
     }
 
-    // Check if selected RAM requires a paid plan
-    const selectedRAMOption = orgoRAMOptions.find(opt => opt.id === selectedOrgoRAM)
-    if (selectedRAMOption && !selectedRAMOption.freeTier) {
-      // User selected a paid tier - redirect to pricing page
-      window.open('https://www.orgo.ai/pricing', '_blank')
-      setOrgoError('Please upgrade your Orgo plan to use ' + selectedRAMOption.name + ' RAM. A new tab has been opened to the pricing page.')
-      return
-    }
-
     setIsSubmitting(true)
     setError(null)
+    setOrgoError(null)
 
     try {
-      // Create the VM
+      // Create and provision the VM immediately
       const res = await fetch('/api/vms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: orgoVMName.trim(),
           provider: 'orgo',
+          provisionNow: true, // Provision the VM immediately
           orgoProjectId: selectedProject?.id,
           orgoProjectName: selectedProject?.name,
           orgoRam: selectedOrgoRAM,
-          orgoCpu: selectedOrgoCPU,
+          orgoCpu: getOrgoCPUForRAM(selectedOrgoRAM),
         }),
       })
 
+      const data = await res.json()
+
       if (!res.ok) {
-        const data = await res.json()
+        // Check if this is a plan upgrade error
+        if (data.needsUpgrade) {
+          setOrgoError(data.error)
+          setIsSubmitting(false)
+          return
+        }
         throw new Error(data.error || 'Failed to create VM')
       }
-
-      const data = await res.json()
       
       closeOrgoModal()
       
       // Redirect to learning-sources page for this VM
       router.push(`/learning-sources?vmId=${data.vm.id}`)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong')
+      setOrgoError(e instanceof Error ? e.message : 'Something went wrong')
       setIsSubmitting(false)
     }
   }
@@ -544,8 +537,7 @@ export default function SelectVMPage() {
     setNewProjectName('claude-brain')
     setOrgoError(null)
     setOrgoVMName('')
-    setSelectedOrgoRAM(8) // Reset to recommended (8 GB)
-    setSelectedOrgoCPU(2) // Reset to default (2 cores)
+    setSelectedOrgoRAM(16) // Reset to recommended (16 GB)
   }
 
   // AWS handlers
@@ -1105,18 +1097,6 @@ export default function SelectVMPage() {
 
               {/* Modal Body */}
               <div className="p-6 space-y-6">
-                {/* Error Display */}
-                {orgoError && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    className="p-3 rounded-lg bg-sam-error/10 border border-sam-error/30 flex items-start gap-2"
-                  >
-                    <AlertCircle className="w-4 h-4 text-sam-error flex-shrink-0 mt-0.5" />
-                    <p className="text-sam-error text-sm">{orgoError}</p>
-                  </motion.div>
-                )}
-
                 {/* VM Name */}
                 <div className="space-y-3">
                   <label className="text-sm font-medium text-sam-text flex items-center gap-2">
@@ -1232,7 +1212,7 @@ export default function SelectVMPage() {
 
                     {orgoProjects.length > 0 && !showCreateProject ? (
                       <>
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                        <div className="space-y-2">
                           {orgoProjects.map((project) => (
                             <button
                               key={project.id}
@@ -1344,59 +1324,43 @@ export default function SelectVMPage() {
                       ))}
                     </div>
                     {!orgoRAMOptions.find(opt => opt.id === selectedOrgoRAM)?.freeTier && (
-                      <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
-                        <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                        <div className="text-sm">
-                          <p className="text-amber-400 font-medium">Paid Plan Required</p>
-                          <p className="text-amber-400/80 text-xs mt-0.5">
-                            {orgoRAMOptions.find(opt => opt.id === selectedOrgoRAM)?.name} RAM requires an upgraded Orgo plan. 
-                            <a 
-                              href="https://www.orgo.ai/pricing" 
-                              target="_blank" 
-                              rel="noopener noreferrer" 
-                              className="underline ml-1 hover:text-amber-300"
-                            >
-                              View pricing →
-                            </a>
-                          </p>
+                      <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/30">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+                          <div className="flex-1">
+                            <p className="text-blue-400 font-medium">Pro Plan Feature</p>
+                            <p className="text-blue-400/80 text-sm mt-1">
+                              {orgoRAMOptions.find(opt => opt.id === selectedOrgoRAM)?.name} RAM requires an Orgo Pro plan. 
+                              If you already have a Pro plan, you can proceed.
+                            </p>
+                          </div>
                         </div>
+                        <a 
+                          href="https://www.orgo.ai/pricing" 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-500/20 border border-blue-500/40 text-blue-400 font-medium text-sm hover:bg-blue-500/30 hover:border-blue-500/50 transition-all"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          View Orgo Plans
+                        </a>
                       </div>
                     )}
                   </motion.div>
                 )}
 
-                {/* CPU Selection */}
-                {keyValidated && (
+                {/* Error Display */}
+                {orgoError && (
                   <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.15 }}
-                    className="space-y-3"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="p-3 rounded-lg bg-sam-error/10 border border-sam-error/30 flex items-start gap-2"
                   >
-                    <label className="text-sm font-medium text-sam-text flex items-center gap-2">
-                      <Server className="w-4 h-4 text-sam-accent" />
-                      CPU Cores
-                    </label>
-                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                      {orgoCPUOptions.map((option) => (
-                        <button
-                          key={option.id}
-                          onClick={() => setSelectedOrgoCPU(option.id)}
-                          className={`p-2.5 rounded-lg border text-left transition-all ${
-                            selectedOrgoCPU === option.id
-                              ? 'border-sam-accent bg-sam-accent/10'
-                              : 'border-sam-border hover:border-sam-accent/50 hover:bg-sam-bg'
-                          }`}
-                        >
-                          <div className="text-sam-text font-medium text-sm">{option.name}</div>
-                          <div className="text-[10px] text-sam-text-dim">
-                            {option.description}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
+                    <AlertCircle className="w-4 h-4 text-sam-error flex-shrink-0 mt-0.5" />
+                    <p className="text-sam-error text-sm">{orgoError}</p>
                   </motion.div>
                 )}
+
               </div>
 
               {/* Modal Footer */}
@@ -1416,11 +1380,6 @@ export default function SelectVMPage() {
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Adding VM...
-                    </>
-                  ) : !orgoRAMOptions.find(opt => opt.id === selectedOrgoRAM)?.freeTier ? (
-                    <>
-                      Upgrade Plan
-                      <ExternalLink className="w-4 h-4" />
                     </>
                   ) : (
                     <>

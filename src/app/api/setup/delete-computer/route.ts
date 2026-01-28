@@ -26,26 +26,58 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get setup state to find computer ID
+    // Check if vmId is provided in the request body
+    const body = await request.json().catch(() => ({}))
+    const vmId = body.vmId
+
+    let vmProvider = 'orgo'
+    let computerId: string | null = null
+    let instanceId: string | null = null
+    let sandboxId: string | null = null
+    let awsRegion: string | null = null
+
+    // If vmId is provided, get the VM to determine provider and resource IDs
+    let vm: any = null
+    if (vmId) {
+      vm = await prisma.vM.findFirst({
+        where: { id: vmId, userId: session.user.id },
+      })
+
+      if (!vm) {
+        return NextResponse.json({ error: 'VM not found' }, { status: 404 })
+      }
+
+      vmProvider = vm.provider
+      computerId = vm.orgoComputerId || null
+      instanceId = vm.awsInstanceId || null
+      sandboxId = vm.e2bSandboxId || null
+      awsRegion = vm.awsRegion || null
+    }
+
+    // Get setup state to find computer ID (fallback if no vmId)
     const setupState = await prisma.setupState.findUnique({
       where: { userId: session.user.id },
     })
 
-    const vmProvider = setupState?.vmProvider || 'orgo'
+    if (!vmId) {
+      vmProvider = setupState?.vmProvider || 'orgo'
+      computerId = setupState?.orgoComputerId || null
+      instanceId = (setupState as any)?.awsInstanceId || null
+    }
 
     // Delete based on provider
     if (vmProvider === 'aws') {
-      // Cast to extended type to access AWS fields
-      const awsState = setupState as AWSSetupState
+      // Use instanceId from VM if available, otherwise from setupState
+      const finalInstanceId = instanceId || (setupState as AWSSetupState)?.awsInstanceId
       
-      // AWS EC2 deletion
-      if (!awsState?.awsInstanceId) {
+      if (!finalInstanceId) {
         return NextResponse.json({ error: 'No EC2 instance to delete' }, { status: 404 })
       }
 
-      const awsAccessKeyId = awsState.awsAccessKeyId
-      const awsSecretAccessKey = awsState.awsSecretAccessKey
-      const awsRegion = awsState.awsRegion || 'us-east-1'
+      const awsState = setupState as AWSSetupState
+      const awsAccessKeyId = awsState?.awsAccessKeyId
+      const awsSecretAccessKey = awsState?.awsSecretAccessKey
+      const finalAwsRegion = awsRegion || awsState?.awsRegion || 'us-east-1'
 
       if (!awsAccessKeyId || !awsSecretAccessKey) {
         return NextResponse.json({ error: 'AWS credentials not configured' }, { status: 500 })
@@ -54,48 +86,71 @@ export async function POST(request: NextRequest) {
       const awsClient = new AWSClient({
         accessKeyId: awsAccessKeyId,
         secretAccessKey: awsSecretAccessKey,
-        region: awsRegion,
+        region: finalAwsRegion,
       })
 
       try {
-        await awsClient.terminateInstance(awsState.awsInstanceId)
-        console.log(`Successfully terminated AWS EC2 instance: ${awsState.awsInstanceId}`)
+        await awsClient.terminateInstance(finalInstanceId)
+        console.log(`Successfully terminated AWS EC2 instance: ${finalInstanceId}`)
       } catch (error: any) {
         const errorMessage = error instanceof Error ? error.message : String(error)
         if (errorMessage.includes('not found') || errorMessage.includes('InvalidInstanceID')) {
-          console.log(`EC2 instance ${awsState.awsInstanceId} already terminated, continuing with state reset`)
+          console.log(`EC2 instance ${finalInstanceId} already terminated, continuing with state reset`)
         } else {
           console.warn(`Error terminating EC2 instance (will still reset state):`, errorMessage)
         }
       }
 
-      // Reset AWS-specific state using raw query to bypass TypeScript
-      await prisma.$executeRaw`
-        UPDATE SetupState SET 
-          status = 'pending',
-          awsInstanceId = NULL,
-          awsInstanceName = NULL,
-          awsPublicIp = NULL,
-          awsPrivateKey = NULL,
-          vmStatus = NULL,
-          vmCreated = 0,
-          repoCreated = 0,
-          repoCloned = 0,
-          gitSyncConfigured = 0,
-          clawdbotInstalled = 0,
-          telegramConfigured = 0,
-          gatewayStarted = 0,
-          errorMessage = NULL
-        WHERE userId = ${session.user.id}
-      `
+      // Delete VM record if vmId was provided
+      if (vmId) {
+        await prisma.vM.delete({ where: { id: vmId } })
+      } else {
+        // Reset AWS-specific state using raw query to bypass TypeScript (backward compatibility)
+        await prisma.$executeRaw`
+          UPDATE SetupState SET 
+            status = 'pending',
+            awsInstanceId = NULL,
+            awsInstanceName = NULL,
+            awsPublicIp = NULL,
+            awsPrivateKey = NULL,
+            vmStatus = NULL,
+            vmCreated = 0,
+            repoCreated = 0,
+            repoCloned = 0,
+            gitSyncConfigured = 0,
+            clawdbotInstalled = 0,
+            telegramConfigured = 0,
+            gatewayStarted = 0,
+            errorMessage = NULL
+          WHERE userId = ${session.user.id}
+        `
+      }
+    } else if (vmProvider === 'e2b') {
+      // E2B sandboxes are ephemeral and auto-terminate after timeout
+      // No explicit deletion needed, but we can log it
+      if (sandboxId) {
+        console.log(`E2B sandbox ${sandboxId} will auto-terminate after timeout`)
+      }
+      
+      // Delete VM record if vmId was provided
+      if (vmId) {
+        await prisma.vM.delete({ where: { id: vmId } })
+      }
+      
+      return NextResponse.json({ 
+        success: true,
+        message: 'E2B sandbox will auto-terminate after timeout'
+      })
     } else {
       // Orgo deletion
-      if (!setupState?.orgoComputerId) {
+      const finalComputerId = computerId || setupState?.orgoComputerId
+      
+      if (!finalComputerId) {
         return NextResponse.json({ error: 'No computer to delete' }, { status: 404 })
       }
 
       // Use user's Orgo API key or fallback to environment
-      const orgoApiKey = setupState.orgoApiKey || process.env.ORGO_API_KEY
+      const orgoApiKey = setupState?.orgoApiKey || process.env.ORGO_API_KEY
       if (!orgoApiKey) {
         return NextResponse.json({ error: 'Orgo API key not configured' }, { status: 500 })
       }
@@ -103,36 +158,41 @@ export async function POST(request: NextRequest) {
       const orgoClient = new OrgoClient(orgoApiKey)
 
       try {
-        await orgoClient.deleteComputer(setupState.orgoComputerId)
-        console.log(`Successfully deleted Orgo computer: ${setupState.orgoComputerId}`)
+        await orgoClient.deleteComputer(finalComputerId)
+        console.log(`Successfully deleted Orgo computer: ${finalComputerId}`)
       } catch (error: any) {
         const errorMessage = error instanceof Error ? error.message : String(error)
         if (errorMessage.includes('404') || errorMessage.includes('not found') || errorMessage.includes('Computer not found')) {
-          console.log(`Computer ${setupState.orgoComputerId} already deleted from Orgo (404), continuing with state reset`)
+          console.log(`Computer ${finalComputerId} already deleted from Orgo (404), continuing with state reset`)
         } else {
           console.warn(`Error deleting computer from Orgo (will still reset state):`, errorMessage)
         }
       }
 
-      // Reset Orgo-specific state
-      await prisma.setupState.update({
-        where: { userId: session.user.id },
-        data: {
-          status: 'pending',
-          orgoProjectId: null,
-          orgoComputerId: null,
-          orgoComputerUrl: null,
-          vmStatus: null,
-          vmCreated: false,
-          repoCreated: false,
-          repoCloned: false,
-          gitSyncConfigured: false,
-          clawdbotInstalled: false,
-          telegramConfigured: false,
-          gatewayStarted: false,
-          errorMessage: null,
-        },
-      })
+      // Delete VM record if vmId was provided
+      if (vmId) {
+        await prisma.vM.delete({ where: { id: vmId } })
+      } else {
+        // Reset Orgo-specific state in SetupState (backward compatibility)
+        await prisma.setupState.update({
+          where: { userId: session.user.id },
+          data: {
+            status: 'pending',
+            orgoProjectId: null,
+            orgoComputerId: null,
+            orgoComputerUrl: null,
+            vmStatus: null,
+            vmCreated: false,
+            repoCreated: false,
+            repoCloned: false,
+            gitSyncConfigured: false,
+            clawdbotInstalled: false,
+            telegramConfigured: false,
+            gatewayStarted: false,
+            errorMessage: null,
+          },
+        })
+      }
     }
 
     return NextResponse.json({ 

@@ -351,18 +351,21 @@ function LearningSourcesContent() {
               // Computer was deleted/reset - hide progress and show API key form
               setShowSetupProgress(false)
               setSetupLogs([])
-            } else if (status.status && status.status !== 'pending' && status.status !== 'ready' && status.status !== 'failed') {
-              // Setup in progress
-            setShowSetupProgress(true)
+            } else if (status.status === 'running' && status.vmCreated && !status.repoCloned) {
+              // VM is provisioned but setup hasn't started - show API key form
+              setShowSetupProgress(false)
+            } else if (status.status && status.status !== 'pending' && status.status !== 'ready' && status.status !== 'failed' && status.status !== 'running') {
+              // Setup in progress (provisioning, creating_repo, configuring_vm)
+              setShowSetupProgress(true)
               if (!prevStatus || prevStatus.status === 'pending') {
-            addLog('info', `Setup status: ${status.status}`)
+                addLog('info', `Setup status: ${status.status}`)
               }
-          } else if (status.status === 'ready') {
+            } else if (status.status === 'ready') {
               // Already ready - ensure we don't show progress
               setShowSetupProgress(false)
-          } else if (status.status === 'failed') {
-            addLog('error', status.errorMessage || 'Setup failed')
-          }
+            } else if (status.status === 'failed') {
+              addLog('error', status.errorMessage || 'Setup failed')
+            }
             return status
           })
         }
@@ -428,9 +431,18 @@ function LearningSourcesContent() {
             status.isE2B ||           // E2B fallback
             status.vmCreated          // Generic check
           )
+          
+          // Check if VM is provisioned but setup hasn't completed
+          // This happens when VM was created with provisionNow=true but user hasn't provided Claude API key yet
+          const isWaitingForSetup = status.status === 'running' && status.vmCreated && !status.repoCloned
+          
           if (isVMReady) {
             setShowSetupProgress(false)
-          } else if (status.status && status.status !== 'pending' && status.status !== 'ready' && status.status !== 'failed') {
+          } else if (isWaitingForSetup) {
+            // VM is provisioned but setup hasn't started - show API key form
+            setShowSetupProgress(false)
+          } else if (status.status && status.status !== 'pending' && status.status !== 'ready' && status.status !== 'failed' && status.status !== 'running') {
+            // Only show progress for actual setup statuses: provisioning, creating_repo, configuring_vm
             setShowSetupProgress(true)
           } else {
             setShowSetupProgress(false)
@@ -668,8 +680,27 @@ function LearningSourcesContent() {
               }}
               onDelete={async () => {
                 try {
+                  // If vmId is available, use the VM deletion endpoint (which deletes the cloud resource)
+                  if (vmId) {
+                    const res = await fetch(`/api/vms/${vmId}`, {
+                      method: 'DELETE',
+                    })
+                    if (res.ok) {
+                      // Redirect to select-vm page after successful deletion
+                      router.push('/select-vm')
+                      return
+                    } else {
+                      const error = await res.json()
+                      alert(`Failed to delete VM: ${error.error || 'Unknown error'}`)
+                      return
+                    }
+                  }
+                  
+                  // Fallback to old delete-computer endpoint for backward compatibility
                   const res = await fetch('/api/setup/delete-computer', {
                     method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ vmId }),
                   })
                   if (res.ok) {
                     // Status will be updated by the periodic check
@@ -689,6 +720,23 @@ function LearningSourcesContent() {
             <>
               <h1 className="text-4xl md:text-5xl font-display font-bold mb-4 text-sam-text leading-tight">Setup VM</h1>
               <div className="p-8 rounded-2xl border border-sam-border bg-sam-surface/50 backdrop-blur">
+                {/* Show notice if VM is already provisioned */}
+                {setupStatus?.vmCreated && setupStatus?.status === 'running' && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="mb-6 p-4 rounded-lg bg-green-500/10 border border-green-500/30 flex items-start gap-3"
+                  >
+                    <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-green-400 font-medium">VM is ready!</p>
+                      <p className="text-green-400/80 text-sm mt-1">
+                        Your VM has been provisioned. Enter your Claude API key below to complete the setup.
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+                
                 <h2 className="text-2xl font-display font-bold mb-2">Enter your API Keys</h2>
 
               {setupError && (

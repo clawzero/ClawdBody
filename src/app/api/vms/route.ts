@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { prisma } from '@/lib/prisma'
+import { OrgoClient, generateComputerName } from '@/lib/orgo'
 
 /**
  * GET /api/vms - List all VMs for the current user
@@ -31,8 +32,15 @@ export async function GET() {
       },
     })
 
+    // Return all VMs without auto-deleting
+    // Note: We no longer auto-delete VMs based on Orgo API responses because:
+    // 1. Newly created VMs might return 404 briefly while being provisioned
+    // 2. Orgo API could be temporarily unavailable
+    // 3. Users should manually delete VMs they no longer need
+    const validVMs = vms
+
     return NextResponse.json({
-      vms,
+      vms: validVMs,
       credentials: {
         hasOrgoApiKey: !!setupState?.orgoApiKey,
         hasAwsCredentials: !!(setupState?.awsAccessKeyId && setupState?.awsSecretAccessKey),
@@ -51,6 +59,7 @@ export async function GET() {
 
 /**
  * POST /api/vms - Create a new VM
+ * For Orgo VMs with provisionNow=true, this will immediately provision the VM
  */
 export async function POST(request: NextRequest) {
   try {
@@ -64,6 +73,7 @@ export async function POST(request: NextRequest) {
     const { 
       name, 
       provider, 
+      provisionNow, // If true, provision Orgo VM immediately
       // Orgo specific
       orgoProjectId,
       orgoProjectName,
@@ -85,18 +95,74 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid provider' }, { status: 400 })
     }
 
+    // For Orgo VMs with provisionNow, create the computer immediately
+    let orgoComputerId: string | undefined
+    let orgoComputerUrl: string | undefined
+    let vmStatus = 'pending'
+
+    if (provider === 'orgo' && provisionNow) {
+      // Get the Orgo API key from setup state
+      const setupState = await prisma.setupState.findUnique({
+        where: { userId: session.user.id },
+        select: { orgoApiKey: true },
+      })
+
+      if (!setupState?.orgoApiKey) {
+        return NextResponse.json({ error: 'Orgo API key not configured' }, { status: 400 })
+      }
+
+      const orgoClient = new OrgoClient(setupState.orgoApiKey)
+      const computerName = generateComputerName()
+
+      try {
+        // Call Orgo API to create the computer
+        const computer = await orgoClient.createComputer(orgoProjectId, computerName, {
+          os: 'linux',
+          ram: orgoRam as 1 | 2 | 4 | 8 | 16 | 32 | 64,
+          cpu: orgoCpu as 1 | 2 | 4 | 8 | 16,
+        })
+
+        orgoComputerId = computer.id
+        orgoComputerUrl = computer.url
+        vmStatus = 'running'
+        
+        console.log(`Orgo computer created: ${computer.id} at ${computer.url}`)
+      } catch (orgoError: any) {
+        console.error('Orgo provisioning error:', orgoError)
+        
+        // Parse the error response from Orgo
+        let errorMessage = orgoError.message || 'Failed to provision VM'
+        let upgradeTier: string | undefined
+        
+        // Check if it's a plan limitation error
+        if (errorMessage.includes('plan allows') || errorMessage.includes('requires')) {
+          // Return the error with upgrade info
+          return NextResponse.json({
+            error: errorMessage,
+            upgradeTier: 'pro', // Or parse from response if available
+            needsUpgrade: true,
+          }, { status: 400 })
+        }
+        
+        return NextResponse.json({ error: errorMessage }, { status: 400 })
+      }
+    }
+
     // Create the VM record
     const vm = await prisma.vM.create({
       data: {
         userId: session.user.id,
         name,
         provider,
-        status: 'pending',
+        status: vmStatus,
+        vmCreated: provider === 'orgo' && provisionNow && !!orgoComputerId,
         // Orgo specific
         orgoProjectId,
         orgoProjectName,
         orgoRam,
         orgoCpu,
+        orgoComputerId,
+        orgoComputerUrl,
         // AWS specific
         awsInstanceType,
         awsRegion,

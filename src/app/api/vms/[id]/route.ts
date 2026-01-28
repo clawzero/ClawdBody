@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { prisma } from '@/lib/prisma'
+import { OrgoClient } from '@/lib/orgo'
+import { AWSClient } from '@/lib/aws'
+import { E2BClient } from '@/lib/e2b'
+import type { SetupState } from '@prisma/client'
 
 /**
  * GET /api/vms/[id] - Get a specific VM
@@ -82,7 +86,7 @@ export async function PATCH(
 }
 
 /**
- * DELETE /api/vms/[id] - Delete a VM
+ * DELETE /api/vms/[id] - Delete a VM and its associated cloud resource
  */
 export async function DELETE(
   request: NextRequest,
@@ -107,6 +111,79 @@ export async function DELETE(
       return NextResponse.json({ error: 'VM not found' }, { status: 404 })
     }
 
+    // Get setup state to retrieve API keys
+    const setupState = await prisma.setupState.findUnique({
+      where: { userId: session.user.id },
+    })
+
+    // Delete the cloud resource based on provider
+    if (existingVM.provider === 'orgo' && existingVM.orgoComputerId) {
+      try {
+        const orgoApiKey = setupState?.orgoApiKey || process.env.ORGO_API_KEY
+        if (orgoApiKey) {
+          const orgoClient = new OrgoClient(orgoApiKey)
+          await orgoClient.deleteComputer(existingVM.orgoComputerId)
+          console.log(`Successfully deleted Orgo computer: ${existingVM.orgoComputerId}`)
+        } else {
+          console.warn('Orgo API key not found, skipping computer deletion')
+        }
+      } catch (error: any) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        if (errorMessage.includes('404') || errorMessage.includes('not found') || errorMessage.includes('Computer not found')) {
+          console.log(`Computer ${existingVM.orgoComputerId} already deleted from Orgo (404), continuing`)
+        } else {
+          console.warn(`Error deleting Orgo computer (will still delete VM record):`, errorMessage)
+        }
+      }
+    } else if (existingVM.provider === 'aws' && existingVM.awsInstanceId) {
+      try {
+        const awsState = setupState as SetupState & { 
+          awsAccessKeyId?: string
+          awsSecretAccessKey?: string
+          awsRegion?: string
+        }
+        const awsAccessKeyId = awsState?.awsAccessKeyId
+        const awsSecretAccessKey = awsState?.awsSecretAccessKey
+        const awsRegion = existingVM.awsRegion || awsState?.awsRegion || 'us-east-1'
+
+        if (awsAccessKeyId && awsSecretAccessKey) {
+          const awsClient = new AWSClient({
+            accessKeyId: awsAccessKeyId,
+            secretAccessKey: awsSecretAccessKey,
+            region: awsRegion,
+          })
+          await awsClient.terminateInstance(existingVM.awsInstanceId)
+          console.log(`Successfully terminated AWS EC2 instance: ${existingVM.awsInstanceId}`)
+        } else {
+          console.warn('AWS credentials not found, skipping instance termination')
+        }
+      } catch (error: any) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        if (errorMessage.includes('not found') || errorMessage.includes('InvalidInstanceID')) {
+          console.log(`EC2 instance ${existingVM.awsInstanceId} already terminated, continuing`)
+        } else {
+          console.warn(`Error terminating EC2 instance (will still delete VM record):`, errorMessage)
+        }
+      }
+    } else if (existingVM.provider === 'e2b' && existingVM.e2bSandboxId) {
+      try {
+        const e2bState = setupState as SetupState & { e2bApiKey?: string }
+        const e2bApiKey = e2bState?.e2bApiKey || process.env.E2B_API_KEY
+        if (e2bApiKey) {
+          const e2bClient = new E2BClient(e2bApiKey)
+          // E2B sandboxes are ephemeral and auto-terminate, but we can try to kill it
+          // Note: We need the sandbox object, but we only have the ID. E2B sandboxes typically
+          // auto-terminate after their timeout, so this is optional.
+          console.log(`E2B sandbox ${existingVM.e2bSandboxId} will auto-terminate after timeout`)
+        } else {
+          console.warn('E2B API key not found, skipping sandbox termination')
+        }
+      } catch (error: any) {
+        console.warn(`Error handling E2B sandbox (will still delete VM record):`, error)
+      }
+    }
+
+    // Delete the VM record from database
     await prisma.vM.delete({
       where: { id: params.id },
     })

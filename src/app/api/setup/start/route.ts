@@ -250,6 +250,14 @@ async function runSetupProcess(
       where: { userId },
     })
 
+    // Get the VM record if vmId is provided (to check if VM is already created)
+    let existingVM = null
+    if (vmId) {
+      existingVM = await prisma.vM.findUnique({
+        where: { id: vmId },
+      })
+    }
+
     // Get GitHub access token
     const account = await prisma.account.findFirst({
       where: { userId, provider: 'github' },
@@ -263,98 +271,123 @@ async function runSetupProcess(
     const githubClient = new GitHubClient(account.access_token)
     const orgoClient = new OrgoClient(orgoApiKey)
 
-    // 1. Create Orgo project and VM
-    console.log(`Creating Orgo project and VM in project "${projectName}"...`)
-    await updateStatus({ status: 'provisioning' })
-
-    // First, find the project by name to get its ID, or create if it doesn't exist
-    const projects = await orgoClient.listProjects()
-    let project = projects.find(p => p.name === projectName)
-    
-    if (!project) {
-      // Project doesn't exist - create it
-      console.log(`Project "${projectName}" not found, creating...`)
-      try {
-        project = await orgoClient.createProject(projectName)
-        console.log(`Created project "${projectName}" with ID: ${project.id}`)
-      } catch (createErr: any) {
-        // If project creation fails, it might be because the API doesn't support explicit creation
-        // In that case, some APIs create projects implicitly - we'll try with an empty ID
-        console.warn(`Could not create project explicitly: ${createErr.message}. Trying implicit creation...`)
-        project = { id: '', name: projectName }
-      }
-    }
-    
-    await updateStatus({ orgoProjectId: project.id || '' })
-
-    const computerName = generateComputerName()
-    // Create computer using project ID (POST /computers with project_id in body)
-    // If project.id is empty, we might need to create the project first via the computer creation
-    // Retry logic for computer creation (may timeout but still succeed)
     let computer: any
-    let retries = 3
-    let lastError: Error | null = null
-    
-    while (retries > 0) {
-      try {
-        // If project ID is empty, try using project name instead (some APIs support this)
-        const projectIdOrName = project.id || project.name
-        computer = await orgoClient.createComputer(projectIdOrName, computerName, {
-          os: 'linux',
-          ram: orgoRam as 1 | 2 | 4 | 8 | 16 | 32 | 64,
-          cpu: orgoCpu as 1 | 2 | 4 | 8 | 16,
-        })
-        
-        // If we didn't have a project ID, update it from the created computer's project info
-        if (!project.id && computer.project_name) {
-          // Try to get the updated project list to find the ID
-          const updatedProjects = await orgoClient.listProjects()
-          const createdProject = updatedProjects.find(p => p.name === computer.project_name || p.name === projectName)
-          if (createdProject) {
-            project = createdProject
-            await updateStatus({ orgoProjectId: createdProject.id })
-          }
-        }
-        
-        break // Success, exit retry loop
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error))
-        console.log(`Computer creation attempt failed (${retries} retries left):`, lastError.message)
-        
-        // If it's a timeout, the computer might still be created - check if it exists
-        if (lastError.message.includes('timed out') || lastError.message.includes('ETIMEDOUT')) {
-          console.log('Timeout detected, checking if computer was created...')
-          try {
-            // Wait a bit and check if computer exists
-            await new Promise(resolve => setTimeout(resolve, 5000))
-            const computers = await orgoClient.listComputers(project.name || projectName)
-            const existingComputer = computers.find(c => c.name === computerName)
-            if (existingComputer) {
-              console.log('Computer was created despite timeout!')
-              computer = existingComputer
-              break
-            }
-          } catch (checkError) {
-            console.log('Could not verify computer creation:', checkError)
-          }
-        }
-        
-        retries--
-        if (retries > 0) {
-          await new Promise(resolve => setTimeout(resolve, 3000)) // Wait before retry
+    let project: { id: string; name: string }
+
+    // Check if VM is already provisioned (created during "Add VM" step)
+    if (existingVM?.vmCreated && existingVM?.orgoComputerId) {
+      console.log(`Using existing Orgo computer: ${existingVM.orgoComputerId}`)
+      
+      // Use the existing computer
+      computer = {
+        id: existingVM.orgoComputerId,
+        url: existingVM.orgoComputerUrl,
+      }
+      project = {
+        id: existingVM.orgoProjectId || '',
+        name: existingVM.orgoProjectName || projectName,
+      }
+      
+      await updateStatus({
+        status: 'provisioning',
+        orgoProjectId: project.id,
+        orgoComputerId: computer.id,
+        orgoComputerUrl: computer.url,
+        vmCreated: true,
+        vmStatus: 'running',
+      })
+    } else {
+      // 1. Create Orgo project and VM
+      console.log(`Creating Orgo project and VM in project "${projectName}"...`)
+      await updateStatus({ status: 'provisioning' })
+
+      // First, find the project by name to get its ID, or create if it doesn't exist
+      const projects = await orgoClient.listProjects()
+      project = projects.find(p => p.name === projectName) || { id: '', name: projectName }
+      
+      if (!project.id) {
+        // Project doesn't exist - create it
+        console.log(`Project "${projectName}" not found, creating...`)
+        try {
+          project = await orgoClient.createProject(projectName)
+          console.log(`Created project "${projectName}" with ID: ${project.id}`)
+        } catch (createErr: any) {
+          // If project creation fails, it might be because the API doesn't support explicit creation
+          // In that case, some APIs create projects implicitly - we'll try with an empty ID
+          console.warn(`Could not create project explicitly: ${createErr.message}. Trying implicit creation...`)
+          project = { id: '', name: projectName }
         }
       }
-    }
-    
-    if (!computer) {
-      throw lastError || new Error('Failed to create computer after retries')
-    }
+      
+      await updateStatus({ orgoProjectId: project.id || '' })
 
-    await updateStatus({
-      orgoComputerId: computer.id,
-      orgoComputerUrl: computer.url,
-      vmStatus: 'creating',
-    })
+      const computerName = generateComputerName()
+      // Create computer using project ID (POST /computers with project_id in body)
+      // Retry logic for computer creation (may timeout but still succeed)
+      let retries = 3
+      let lastError: Error | null = null
+      
+      while (retries > 0) {
+        try {
+          // If project ID is empty, try using project name instead (some APIs support this)
+          const projectIdOrName = project.id || project.name
+          computer = await orgoClient.createComputer(projectIdOrName, computerName, {
+            os: 'linux',
+            ram: orgoRam as 1 | 2 | 4 | 8 | 16 | 32 | 64,
+            cpu: orgoCpu as 1 | 2 | 4 | 8 | 16,
+          })
+          
+          // If we didn't have a project ID, update it from the created computer's project info
+          if (!project.id && computer.project_name) {
+            // Try to get the updated project list to find the ID
+            const updatedProjects = await orgoClient.listProjects()
+            const createdProject = updatedProjects.find(p => p.name === computer.project_name || p.name === projectName)
+            if (createdProject) {
+              project = createdProject
+              await updateStatus({ orgoProjectId: createdProject.id })
+            }
+          }
+          
+          break // Success, exit retry loop
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error))
+          console.log(`Computer creation attempt failed (${retries} retries left):`, lastError.message)
+          
+          // If it's a timeout, the computer might still be created - check if it exists
+          if (lastError.message.includes('timed out') || lastError.message.includes('ETIMEDOUT')) {
+            console.log('Timeout detected, checking if computer was created...')
+            try {
+              // Wait a bit and check if computer exists
+              await new Promise(resolve => setTimeout(resolve, 5000))
+              const computers = await orgoClient.listComputers(project.name || projectName)
+              const existingComputer = computers.find(c => c.name === computerName)
+              if (existingComputer) {
+                console.log('Computer was created despite timeout!')
+                computer = existingComputer
+                break
+              }
+            } catch (checkError) {
+              console.log('Could not verify computer creation:', checkError)
+            }
+          }
+          
+          retries--
+          if (retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, 3000)) // Wait before retry
+          }
+        }
+      }
+      
+      if (!computer) {
+        throw lastError || new Error('Failed to create computer after retries')
+      }
+
+      await updateStatus({
+        orgoComputerId: computer.id,
+        orgoComputerUrl: computer.url,
+        vmStatus: 'creating',
+      })
+    }
 
     // Wait a bit for VM to initialize before trying to configure it
     console.log('Waiting for VM to initialize...')
