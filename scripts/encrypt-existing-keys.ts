@@ -28,13 +28,14 @@ async function main() {
   console.log('🔐 Starting encryption migration...\n')
   
   // Check if ENCRYPTION_KEY is set
-  if (!process.env.ENCRYPTION_KEY && process.env.NODE_ENV !== 'development') {
+  const nodeEnv = process.env.NODE_ENV as string
+  if (!process.env.ENCRYPTION_KEY && nodeEnv !== 'development') {
     console.log('⚠️  ENCRYPTION_KEY not set!')
     console.log('   Generate a new key with:')
     console.log(`   ENCRYPTION_KEY="${generateEncryptionKey()}"`)
     console.log('\n   Add this to your .env file or Railway environment variables.\n')
     
-    if (process.env.NODE_ENV !== 'development') {
+    if (nodeEnv !== 'development') {
       process.exit(1)
     }
     console.log('   Running in development mode with default key...\n')
