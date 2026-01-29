@@ -39,12 +39,13 @@ export class OrgoClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    timeoutOverrideMs?: number
   ): Promise<T> {
     const url = `${ORGO_API_BASE}${endpoint}`
     
-    // Add timeout to fetch requests (60 seconds for long operations like computer creation)
-    const timeoutMs = 60000
+    // Add timeout to fetch requests (default 60 seconds, can be overridden for long operations)
+    const timeoutMs = timeoutOverrideMs || 60000
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
     
@@ -194,12 +195,19 @@ export class OrgoClient {
 
   /**
    * Execute a bash command on the computer
+   * @param computerId - The computer ID
+   * @param command - The bash command to execute
+   * @param timeoutMs - Optional timeout in milliseconds (default: 300000 = 5 minutes for long-running commands)
    */
-  async bash(computerId: string, command: string): Promise<{ output: string; exit_code: number }> {
-    return this.request(`/computers/${this.normalizeComputerId(computerId)}/bash`, {
-      method: 'POST',
-      body: JSON.stringify({ command }),
-    })
+  async bash(computerId: string, command: string, timeoutMs: number = 300000): Promise<{ output: string; exit_code: number }> {
+    return this.request(
+      `/computers/${this.normalizeComputerId(computerId)}/bash`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ command }),
+      },
+      timeoutMs
+    )
   }
 
   /**

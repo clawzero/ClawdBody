@@ -274,43 +274,294 @@ export class VMSetup {
   }
 
   /**
+   * Wait for apt-get to be unlocked (handles unattended-upgrades and dpkg locks)
+   * This is critical for freshly provisioned VMs where background updates may be running
+   */
+  private async waitForAptLock(maxRetries: number = 30, delayMs: number = 10000): Promise<boolean> {
+    this.onProgress?.({
+      step: 'Wait for apt',
+      message: 'Waiting for package manager to be available...',
+      success: true,
+    })
+
+    // First, check if we're root or need sudo
+    const whoamiResult = await this.orgo.bash(this.computerId, 'whoami')
+    const isRoot = whoamiResult.output.trim() === 'root'
+    const sudoPrefix = isRoot ? '' : 'sudo '
+
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        // Try to actually run apt-get update - this is the most reliable check
+        // Use a short timeout and just check if it starts successfully
+        const aptTest = await this.orgo.bash(
+          this.computerId,
+          `${sudoPrefix}DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>&1`
+        )
+        
+        // Check for lock-related errors
+        const output = aptTest.output.toLowerCase()
+        const hasLockError = output.includes('could not get lock') || 
+                           output.includes('unable to acquire') ||
+                           output.includes('dpkg was interrupted') ||
+                           output.includes('dpkg --configure -a') ||
+                           output.includes('is another process using it')
+        
+        if (aptTest.exit_code === 0 && !hasLockError) {
+          this.onProgress?.({
+            step: 'Wait for apt',
+            message: 'Package manager is ready (apt-get update succeeded)',
+            success: true,
+          })
+          return true
+        }
+        
+        // If dpkg was interrupted, try to fix it
+        if (output.includes('dpkg was interrupted') || output.includes('dpkg --configure -a')) {
+          this.onProgress?.({
+            step: 'Wait for apt',
+            message: 'Fixing interrupted dpkg...',
+            success: true,
+          })
+          await this.orgo.bash(this.computerId, `${sudoPrefix}dpkg --configure -a 2>&1 || true`)
+          await new Promise(resolve => setTimeout(resolve, 5000))
+          continue
+        }
+        
+        this.onProgress?.({
+          step: 'Wait for apt',
+          message: `Package manager busy, waiting... (${i + 1}/${maxRetries}) - ${aptTest.output.slice(0, 100)}`,
+          success: true,
+        })
+      } catch (error) {
+        this.onProgress?.({
+          step: 'Wait for apt',
+          message: `Error checking apt: ${error instanceof Error ? error.message : 'unknown'}`,
+          success: true,
+        })
+      }
+      
+      if (i < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+      }
+    }
+    
+    // Last resort: try to kill processes that might be blocking and fix dpkg
+    this.onProgress?.({
+      step: 'Wait for apt',
+      message: 'Attempting to force-fix package manager...',
+      success: true,
+    })
+    
+    try {
+      const sudoPrefix2 = isRoot ? '' : 'sudo '
+      // Kill potential blocking processes
+      await this.orgo.bash(
+        this.computerId,
+        `${sudoPrefix2}pkill -9 -f unattended-upgr 2>/dev/null || true`
+      )
+      await this.orgo.bash(
+        this.computerId,
+        `${sudoPrefix2}pkill -9 -f apt 2>/dev/null || true`
+      )
+      // Remove lock files
+      await this.orgo.bash(
+        this.computerId,
+        `${sudoPrefix2}rm -f /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock 2>/dev/null || true`
+      )
+      // Fix dpkg
+      await this.orgo.bash(
+        this.computerId,
+        `${sudoPrefix2}dpkg --configure -a 2>/dev/null || true`
+      )
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Install Python, Git, SSH and other essential tools
    */
   async installPython(): Promise<boolean> {
     // Wait for VM to be ready first
     const vmReady = await this.waitForVMReady(15, 5000) // 15 retries, 5 seconds apart = up to 75 seconds
     if (!vmReady) {
+      this.onProgress?.({
+        step: 'Install Python',
+        message: 'VM not ready after waiting',
+        success: false,
+      })
       return false
     }
 
-    // Retry logic for installation commands
-    const commands = [
-      'apt-get update -qq',
-      // Install python3, git, and openssh-client (provides ssh-keygen)
-      'apt-get install -y -qq python3 python3-pip python3-venv git openssh-client procps',
-    ]
+    // Gather VM diagnostic information
+    const whoamiResult = await this.orgo.bash(this.computerId, 'whoami')
+    const isRoot = whoamiResult.output.trim() === 'root'
+    const sudoPrefix = isRoot ? '' : 'sudo '
+    
+    // Check OS type and package manager
+    const osInfo = await this.orgo.bash(this.computerId, 'cat /etc/os-release 2>/dev/null | head -3 || echo "Unknown OS"')
+    const pkgMgrCheck = await this.orgo.bash(this.computerId, 'which apt-get apk yum dnf 2>/dev/null | head -1 || echo "no-pkg-mgr"')
+    
+    this.onProgress?.({
+      step: 'Install Python',
+      message: `VM Info - User: ${whoamiResult.output.trim()}, OS: ${osInfo.output.slice(0, 50).replace(/\n/g, ' ')}, Pkg: ${pkgMgrCheck.output.trim()}`,
+      success: true,
+    })
 
-    for (const cmd of commands) {
-      let retries = 3
-      let success = false
-      
-      while (retries > 0 && !success) {
-        const result = await this.runCommand(`sudo ${cmd}`, 'Install Python')
-        if (result.success) {
-          success = true
-        } else {
-          retries--
-          if (retries > 0) {
-            await new Promise(resolve => setTimeout(resolve, 3000))
-          }
-        }
-      }
-      
-      if (!success) {
+    // Check if Python is already installed
+    const pythonCheck = await this.orgo.bash(this.computerId, 'python3 --version 2>/dev/null || python --version 2>/dev/null || echo "NOT_INSTALLED"')
+    if (!pythonCheck.output.includes('NOT_INSTALLED') && pythonCheck.exit_code === 0) {
+      this.onProgress?.({
+        step: 'Install Python',
+        message: `Python already installed: ${pythonCheck.output.trim()}`,
+        success: true,
+      })
+      // Still continue to ensure other tools are installed
+    }
+
+    // Handle Alpine Linux (uses apk instead of apt)
+    if (pkgMgrCheck.output.includes('apk')) {
+      this.onProgress?.({
+        step: 'Install Python',
+        message: 'Detected Alpine Linux, using apk...',
+        success: true,
+      })
+      const apkResult = await this.orgo.bash(
+        this.computerId,
+        `${sudoPrefix}apk update && ${sudoPrefix}apk add python3 py3-pip git openssh curl wget`
+      )
+      if (apkResult.exit_code === 0) {
+        this.onProgress?.({
+          step: 'Install Python',
+          message: 'Python and tools installed via apk',
+          success: true,
+        })
+        return true
+      } else {
+        this.onProgress?.({
+          step: 'Install Python',
+          message: `apk install failed: ${apkResult.output.slice(0, 200)}`,
+          success: false,
+        })
         return false
       }
     }
 
+    // For non-apt systems, try to use what's available
+    if (!pkgMgrCheck.output.includes('apt-get')) {
+      this.onProgress?.({
+        step: 'Install Python',
+        message: `Non-standard package manager detected: ${pkgMgrCheck.output.trim()}. Checking if Python exists...`,
+        success: true,
+      })
+      // Check if python3 is available anyway
+      const finalCheck = await this.orgo.bash(this.computerId, 'python3 --version && git --version')
+      if (finalCheck.exit_code === 0) {
+        this.onProgress?.({
+          step: 'Install Python',
+          message: `Tools already available: ${finalCheck.output.trim()}`,
+          success: true,
+        })
+        return true
+      }
+    }
+    
+    this.onProgress?.({
+      step: 'Install Python',
+      message: `Running as: ${whoamiResult.output.trim()} (${isRoot ? 'no sudo needed' : 'using sudo'})`,
+      success: true,
+    })
+
+    // Wait for apt-get to be unlocked (critical for fresh VMs)
+    // Fresh VMs often have unattended-upgrades running which locks apt
+    // Note: waitForAptLock now already runs apt-get update if successful
+    const aptReady = await this.waitForAptLock(30, 10000) // 30 retries, 10 seconds apart = up to 5 minutes
+    if (!aptReady) {
+      this.onProgress?.({
+        step: 'Install Python',
+        message: 'Package manager remained locked after waiting',
+        success: false,
+      })
+      return false
+    }
+
+    // Install packages - apt-get update was already done in waitForAptLock
+    const installCmd = `${sudoPrefix}DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv git openssh-client procps curl wget`
+    
+    let retries = 5
+    let success = false
+    let lastOutput = ''
+    
+    while (retries > 0 && !success) {
+      this.onProgress?.({
+        step: 'Install Python',
+        message: `Installing packages... (attempt ${6 - retries}/5)`,
+        success: true,
+      })
+      
+      const result = await this.runCommand(installCmd, 'Install Python')
+      lastOutput = result.output
+      
+      if (result.success) {
+        success = true
+      } else {
+        const output = result.output.toLowerCase()
+        
+        // Check if it's a lock error and wait longer
+        if (output.includes('could not get lock') || 
+            output.includes('unable to acquire') ||
+            output.includes('dpkg was interrupted')) {
+          this.onProgress?.({
+            step: 'Install Python',
+            message: `Package manager locked, retrying in 20s... (${retries - 1} attempts left)`,
+            success: true,
+          })
+          
+          // Try to fix dpkg if interrupted
+          if (output.includes('dpkg was interrupted') || output.includes('dpkg --configure -a')) {
+            await this.orgo.bash(this.computerId, `${sudoPrefix}dpkg --configure -a 2>&1 || true`)
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 20000))
+        } else {
+          this.onProgress?.({
+            step: 'Install Python',
+            message: `Install failed: ${result.output.slice(0, 150)}... retrying in 10s`,
+            success: true,
+          })
+          await new Promise(resolve => setTimeout(resolve, 10000))
+        }
+        retries--
+      }
+    }
+    
+    if (!success) {
+      this.onProgress?.({
+        step: 'Install Python',
+        message: `Failed after 5 attempts: ${lastOutput.slice(0, 300)}`,
+        success: false,
+      })
+      return false
+    }
+
+    // Verify installation
+    const verifyResult = await this.orgo.bash(this.computerId, 'python3 --version && git --version')
+    if (verifyResult.exit_code !== 0) {
+      this.onProgress?.({
+        step: 'Install Python',
+        message: `Installation verification failed: ${verifyResult.output}`,
+        success: false,
+      })
+      return false
+    }
+
+    this.onProgress?.({
+      step: 'Install Python',
+      message: `Python and essential tools installed: ${verifyResult.output.trim()}`,
+      success: true,
+    })
     return true
   }
 

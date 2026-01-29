@@ -202,6 +202,8 @@ export default function SelectVMPage() {
   const [orgoError, setOrgoError] = useState<string | null>(null)
   const [orgoVMName, setOrgoVMName] = useState('')
   const [selectedOrgoRAM, setSelectedOrgoRAM] = useState(16) // Default 16 GB (recommended)
+  const [showDeleteOrgoConfirm, setShowDeleteOrgoConfirm] = useState(false)
+  const [isDeletingOrgoKey, setIsDeletingOrgoKey] = useState(false)
 
   // AWS configuration modal state
   const [showAWSModal, setShowAWSModal] = useState(false)
@@ -534,6 +536,43 @@ export default function SelectVMPage() {
     setOrgoError(null)
     setOrgoVMName('')
     setSelectedOrgoRAM(16) // Reset to recommended (16 GB)
+    setShowDeleteOrgoConfirm(false)
+  }
+
+  const handleDeleteOrgoApiKey = async () => {
+    setIsDeletingOrgoKey(true)
+    setOrgoError(null)
+
+    try {
+      const res = await fetch('/api/setup/orgo/delete-api-key', {
+        method: 'POST',
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete API key')
+      }
+
+      // Refresh the VM list and credentials
+      await loadVMs()
+
+      // Reset the modal to initial state (show API key entry)
+      setKeyValidated(false)
+      setOrgoApiKey('')
+      setOrgoProjects([])
+      setSelectedProject(null)
+      setShowCreateProject(false)
+      setShowDeleteOrgoConfirm(false)
+
+      // Update local credentials state
+      setCredentials(prev => prev ? { ...prev, hasOrgoApiKey: false } : null)
+
+    } catch (e) {
+      setOrgoError(e instanceof Error ? e.message : 'Failed to delete API key')
+    } finally {
+      setIsDeletingOrgoKey(false)
+    }
   }
 
   // AWS handlers
@@ -1221,17 +1260,88 @@ export default function SelectVMPage() {
                 )}
 
                 {/* Already configured notice */}
-                {credentials?.hasOrgoApiKey && (
+                {credentials?.hasOrgoApiKey && !showDeleteOrgoConfirm && (
                   <div className="p-3 rounded-lg bg-green-500/5 border border-green-500/20">
-                    <p className="text-sm text-green-400 flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4" />
-                      Using your saved Orgo API key
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-green-400 flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4" />
+                        Using your saved Orgo API key
+                      </p>
+                      <button
+                        onClick={() => setShowDeleteOrgoConfirm(true)}
+                        className="text-xs text-sam-text-dim hover:text-sam-error transition-colors flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 )}
 
+                {/* Delete API Key Confirmation Dialog */}
+                {showDeleteOrgoConfirm && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="p-4 rounded-lg bg-sam-error/5 border border-sam-error/30"
+                  >
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-full bg-sam-error/10 flex items-center justify-center flex-shrink-0">
+                        <AlertCircle className="w-5 h-5 text-sam-error" />
+                      </div>
+                      <div>
+                        <h4 className="text-sam-error font-medium mb-2">Delete Orgo API Key?</h4>
+                        <p className="text-sm text-sam-text-dim mb-2">
+                          This will remove your Orgo API key from ClawdBody. Here's what will happen:
+                        </p>
+                        <ul className="text-sm text-sam-text-dim space-y-1.5 mb-3">
+                          <li className="flex items-start gap-2">
+                            <span className="text-sam-error mt-0.5">•</span>
+                            <span>All Orgo computers linked to ClawdBody will be <strong className="text-sam-text">disconnected</strong></span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-sam-accent mt-0.5">•</span>
+                            <span>Your computers will <strong className="text-sam-text">still exist</strong> on your Orgo account</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-sam-text-dim mt-0.5">•</span>
+                            <span>You can re-add your API key anytime to reconnect</span>
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        onClick={() => setShowDeleteOrgoConfirm(false)}
+                        disabled={isDeletingOrgoKey}
+                        className="px-4 py-2 rounded-lg border border-sam-border text-sam-text-dim hover:text-sam-text hover:border-sam-accent/50 font-medium text-sm transition-colors disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleDeleteOrgoApiKey}
+                        disabled={isDeletingOrgoKey}
+                        className="px-4 py-2 rounded-lg bg-sam-error/10 border border-sam-error/50 text-sam-error hover:bg-sam-error/20 font-medium text-sm transition-colors disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {isDeletingOrgoKey ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Deleting...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="w-4 h-4" />
+                            Delete API Key
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+
                 {/* Project Selection */}
-                {keyValidated && (
+                {keyValidated && !showDeleteOrgoConfirm && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1316,7 +1426,7 @@ export default function SelectVMPage() {
                 )}
 
                 {/* RAM Selection */}
-                {keyValidated && (
+                {keyValidated && !showDeleteOrgoConfirm && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1404,7 +1514,7 @@ export default function SelectVMPage() {
                 </button>
                 <button
                   onClick={handleOrgoConfirm}
-                  disabled={!keyValidated || isSubmitting || (orgoProjects.length > 0 && !selectedProject) || !orgoVMName.trim()}
+                  disabled={!keyValidated || isSubmitting || (orgoProjects.length > 0 && !selectedProject) || !orgoVMName.trim() || showDeleteOrgoConfirm}
                   className="px-5 py-2.5 rounded-lg bg-sam-accent text-sam-bg font-medium text-sm hover:bg-sam-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {isSubmitting ? (

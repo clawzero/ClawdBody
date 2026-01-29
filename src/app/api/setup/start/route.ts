@@ -78,23 +78,34 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // Check if VM is already provisioned (has a cloud resource)
+    const isVMAlreadyProvisioned = vm && vm.vmCreated && (vm.orgoComputerId || vm.awsInstanceId || vm.e2bSandboxId)
+
     if (!setupState) {
       setupState = await prisma.setupState.create({
         data: {
           userId: session.user.id,
           claudeApiKey: encrypt(claudeApiKey),
-          status: 'provisioning',
+          status: isVMAlreadyProvisioned ? 'configuring_vm' : 'provisioning',
+          // Sync vmCreated from the VM if it's already provisioned
+          vmCreated: isVMAlreadyProvisioned ? true : false,
+          orgoComputerId: vm?.orgoComputerId || undefined,
+          orgoComputerUrl: vm?.orgoComputerUrl || undefined,
         },
       })
     } else {
-      // Update existing state and reset all progress flags for a fresh start
+      // Update existing state and reset progress flags
+      // IMPORTANT: Don't reset vmCreated if the VM is already provisioned
       setupState = await prisma.setupState.update({
         where: { id: setupState.id },
         data: {
           claudeApiKey: encrypt(claudeApiKey),
-          status: 'provisioning',
+          status: isVMAlreadyProvisioned ? 'configuring_vm' : 'provisioning',
           errorMessage: null,
-          vmCreated: false,
+          // Only reset vmCreated if the VM hasn't been provisioned yet
+          ...(isVMAlreadyProvisioned ? { vmCreated: true } : { vmCreated: false }),
+          // Sync Orgo computer info if available
+          ...(vm?.orgoComputerId ? { orgoComputerId: vm.orgoComputerId, orgoComputerUrl: vm.orgoComputerUrl } : {}),
           clawdbotInstalled: false,
           telegramConfigured: false,
           gatewayStarted: false,
@@ -103,13 +114,17 @@ export async function POST(request: NextRequest) {
     }
 
     // If vmId is provided, also update the VM model status
+    // IMPORTANT: Don't reset vmCreated if the VM already has a provisioned computer
+    // This prevents double-provisioning when the user clicks "Begin Setup" after adding a VM
     if (vmId && vm) {
+      const isAlreadyProvisioned = vm.vmCreated && (vm.orgoComputerId || vm.awsInstanceId || vm.e2bSandboxId)
       await prisma.vM.update({
         where: { id: vmId },
         data: {
-          status: 'provisioning',
+          status: isAlreadyProvisioned ? 'configuring_vm' : 'provisioning',
           errorMessage: null,
-          vmCreated: false,
+          // Only reset vmCreated if the VM hasn't been provisioned yet
+          ...(isAlreadyProvisioned ? {} : { vmCreated: false }),
           clawdbotInstalled: false,
           gatewayStarted: false,
         },
@@ -365,8 +380,17 @@ async function runSetupProcess(
       })
     }
 
-    // Wait a bit for VM to initialize before trying to configure it
-    await new Promise(resolve => setTimeout(resolve, 10000)) // Wait 10 seconds
+    // Wait for VM to be fully running using Orgo API
+    // This is more reliable than just a fixed timeout
+    try {
+      await orgoClient.waitForReady(computer.id, 30, 5000) // 30 retries, 5 seconds apart = up to 2.5 minutes
+    } catch (waitError) {
+      // Even if waitForReady times out, the VM might still be usable - continue with a warning
+      console.warn('VM waitForReady timed out, continuing anyway:', waitError)
+    }
+
+    // Additional wait for VM services to fully initialize
+    await new Promise(resolve => setTimeout(resolve, 15000)) // Wait 15 seconds for services
 
     await updateStatus({ vmCreated: true, vmStatus: 'running' })
 
