@@ -4,6 +4,7 @@ import { signIn } from 'next-auth/react'
 import { motion } from 'framer-motion'
 import { Github, Calendar, HardDrive, MessageSquare, MoreHorizontal, ExternalLink } from 'lucide-react'
 import Script from 'next/script'
+import Link from 'next/link'
 
 // Discord Icon SVG Component
 const DiscordIcon = ({ className }: { className?: string }) => (
@@ -340,6 +341,34 @@ export function LandingPage() {
             </motion.div>
           </div>
         </motion.div>
+
+        {/* Footer */}
+        <motion.footer
+          className="mt-20 pt-8 border-t border-white/10"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.8, duration: 0.4 }}
+        >
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-gray-500 text-sm">
+              © {new Date().getFullYear()} ClawdBody. All rights reserved.
+            </p>
+            <div className="flex items-center gap-6">
+              <Link 
+                href="/terms" 
+                className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
+              >
+                Terms of Service
+              </Link>
+              <a 
+                href="mailto:contact@clawdbody.com" 
+                className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
+              >
+                Contact
+              </a>
+            </div>
+          </div>
+        </motion.footer>
       </div>
     </div>
   )
