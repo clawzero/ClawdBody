@@ -93,14 +93,9 @@ export async function POST(request: NextRequest) {
 
       try {
         await awsClient.terminateInstance(finalInstanceId)
-        console.log(`Successfully terminated AWS EC2 instance: ${finalInstanceId}`)
       } catch (error: any) {
         const errorMessage = error instanceof Error ? error.message : String(error)
-        if (errorMessage.includes('not found') || errorMessage.includes('InvalidInstanceID')) {
-          console.log(`EC2 instance ${finalInstanceId} already terminated, continuing with state reset`)
-        } else {
-          console.warn(`Error terminating EC2 instance (will still reset state):`, errorMessage)
-        }
+        // Continue with state reset even if termination fails
       }
 
       // Delete VM record if vmId was provided
@@ -126,10 +121,7 @@ export async function POST(request: NextRequest) {
       }
     } else if (vmProvider === 'e2b') {
       // E2B sandboxes are ephemeral and auto-terminate after timeout
-      // No explicit deletion needed, but we can log it
-      if (sandboxId) {
-        console.log(`E2B sandbox ${sandboxId} will auto-terminate after timeout`)
-      }
+      // No explicit deletion needed
       
       // Delete VM record if vmId was provided
       if (vmId) {
@@ -161,14 +153,9 @@ export async function POST(request: NextRequest) {
 
       try {
         await orgoClient.deleteComputer(finalComputerId)
-        console.log(`Successfully deleted Orgo computer: ${finalComputerId}`)
       } catch (error: any) {
         const errorMessage = error instanceof Error ? error.message : String(error)
-        if (errorMessage.includes('404') || errorMessage.includes('not found') || errorMessage.includes('Computer not found')) {
-          console.log(`Computer ${finalComputerId} already deleted from Orgo (404), continuing with state reset`)
-        } else {
-          console.warn(`Error deleting computer from Orgo (will still reset state):`, errorMessage)
-        }
+        // Continue with state reset even if deletion fails
       }
 
       // Delete VM record if vmId was provided
@@ -200,7 +187,6 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Delete computer error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to delete computer' },
       { status: 500 }

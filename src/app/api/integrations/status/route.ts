@@ -86,7 +86,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status })
 
   } catch (error: any) {
-    console.error('Integration status error:', error)
     return NextResponse.json(
       { error: 'Failed to get integration status' },
       { status: 500 }

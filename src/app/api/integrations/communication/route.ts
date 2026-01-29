@@ -106,7 +106,6 @@ export async function POST(request: NextRequest) {
     }
 
   } catch (error: any) {
-    console.error('Communication API error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to send email' },
       { status: 500 }
@@ -223,7 +222,6 @@ export async function PUT(request: NextRequest) {
     }
 
   } catch (error: any) {
-    console.error('Calendar API error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to perform calendar operation' },
       { status: 500 }

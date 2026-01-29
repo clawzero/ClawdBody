@@ -296,17 +296,15 @@ touch /tmp/clawdbot-ready
       }
     } catch (error) {
       // Clean up the key pair since instance creation failed
-      console.log(`Instance creation failed, cleaning up key pair: ${keyName}`)
       try {
         await this.ec2.send(new DeleteKeyPairCommand({ KeyName: keyName }))
       } catch (cleanupError) {
-        console.error('Failed to clean up key pair:', cleanupError)
+        // Failed to clean up key pair
       }
       throw error
     }
 
     // Wait for instance to be running
-    console.log(`Waiting for instance ${instanceId} to be running...`)
     await waitUntilInstanceRunning(
       { client: this.ec2, maxWaitTime: 300 },
       { InstanceIds: [instanceId] }

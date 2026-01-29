@@ -51,7 +51,7 @@ export class MemoryAPI {
       try {
         await this.vectorIndex.index(memory);
       } catch (error) {
-        console.warn('Failed to index memory for semantic search:', error);
+
       }
     }
 
@@ -76,7 +76,7 @@ export class MemoryAPI {
       try {
         await this.vectorIndex.index(updated);
       } catch (error) {
-        console.warn('Failed to re-index memory:', error);
+
       }
     }
 
@@ -222,7 +222,7 @@ export class MemoryAPI {
       try {
         await this.vectorIndex.indexBatch(memories);
       } catch (error) {
-        console.warn('Failed to batch index memories:', error);
+
       }
     }
 
@@ -418,7 +418,7 @@ export class MemoryAPI {
         try {
           await this.vectorIndex.index(memory);
         } catch (error) {
-          console.warn(`Failed to index memory ${memory.id}:`, error);
+
         }
       }
     }

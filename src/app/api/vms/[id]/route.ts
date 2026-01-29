@@ -34,7 +34,6 @@ export async function GET(
 
     return NextResponse.json({ vm })
   } catch (error) {
-    console.error('Get VM error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to get VM' },
       { status: 500 }
@@ -77,7 +76,6 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, vm })
   } catch (error) {
-    console.error('Update VM error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to update VM' },
       { status: 500 }
@@ -123,16 +121,14 @@ export async function DELETE(
         if (orgoApiKey) {
           const orgoClient = new OrgoClient(orgoApiKey)
           await orgoClient.deleteComputer(existingVM.orgoComputerId)
-          console.log(`Successfully deleted Orgo computer: ${existingVM.orgoComputerId}`)
         } else {
-          console.warn('Orgo API key not found, skipping computer deletion')
         }
       } catch (error: any) {
         const errorMessage = error instanceof Error ? error.message : String(error)
         if (errorMessage.includes('404') || errorMessage.includes('not found') || errorMessage.includes('Computer not found')) {
-          console.log(`Computer ${existingVM.orgoComputerId} already deleted from Orgo (404), continuing`)
+, continuing`)
         } else {
-          console.warn(`Error deleting Orgo computer (will still delete VM record):`, errorMessage)
+:`, errorMessage)
         }
       }
     } else if (existingVM.provider === 'aws' && existingVM.awsInstanceId) {
@@ -153,16 +149,13 @@ export async function DELETE(
             region: awsRegion,
           })
           await awsClient.terminateInstance(existingVM.awsInstanceId)
-          console.log(`Successfully terminated AWS EC2 instance: ${existingVM.awsInstanceId}`)
         } else {
-          console.warn('AWS credentials not found, skipping instance termination')
         }
       } catch (error: any) {
         const errorMessage = error instanceof Error ? error.message : String(error)
         if (errorMessage.includes('not found') || errorMessage.includes('InvalidInstanceID')) {
-          console.log(`EC2 instance ${existingVM.awsInstanceId} already terminated, continuing`)
         } else {
-          console.warn(`Error terminating EC2 instance (will still delete VM record):`, errorMessage)
+:`, errorMessage)
         }
       }
     } else if (existingVM.provider === 'e2b' && existingVM.e2bSandboxId) {
@@ -174,12 +167,10 @@ export async function DELETE(
           // E2B sandboxes are ephemeral and auto-terminate, but we can try to kill it
           // Note: We need the sandbox object, but we only have the ID. E2B sandboxes typically
           // auto-terminate after their timeout, so this is optional.
-          console.log(`E2B sandbox ${existingVM.e2bSandboxId} will auto-terminate after timeout`)
         } else {
-          console.warn('E2B API key not found, skipping sandbox termination')
         }
       } catch (error: any) {
-        console.warn(`Error handling E2B sandbox (will still delete VM record):`, error)
+:`, error)
       }
     }
 
@@ -190,7 +181,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Delete VM error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to delete VM' },
       { status: 500 }

@@ -73,7 +73,6 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Gateway status check error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to check gateway status' },
       { status: 500 }

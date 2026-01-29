@@ -50,7 +50,6 @@ export class VMSetup {
         // If it's a 502 or connection error, wait and retry
         if (attempt < retries && (message.includes('502') || message.includes('Failed to execute') || message.includes('ECONNREFUSED'))) {
           const waitTime = (attempt + 1) * 2000 // Exponential backoff: 2s, 4s
-          console.log(`Command failed (attempt ${attempt + 1}/${retries + 1}), retrying in ${waitTime}ms...`)
           await new Promise(resolve => setTimeout(resolve, waitTime))
           continue
         }
@@ -80,7 +79,6 @@ export class VMSetup {
     )
     
     if (!mkdirResult.success) {
-      console.error('Failed to create .ssh directory:', mkdirResult.output)
       return { publicKey: '', success: false }
     }
 
@@ -92,14 +90,12 @@ export class VMSetup {
     
     if (!checkSshKeygen.success || !checkSshKeygen.output.trim()) {
       // Try to install openssh-client if not found
-      console.log('ssh-keygen not found, installing openssh-client...')
       const installSsh = await this.runCommand(
         'sudo apt-get update -qq && sudo apt-get install -y -qq openssh-client',
         'Install openssh-client'
       )
       
       if (!installSsh.success) {
-        console.error('Failed to install openssh-client:', installSsh.output)
         return { publicKey: '', success: false }
       }
     }
@@ -117,7 +113,6 @@ export class VMSetup {
     )
     
     if (!keyGen.success) {
-      console.error('Failed to generate SSH key:', keyGen.output)
       return { publicKey: '', success: false }
     }
 
@@ -125,7 +120,6 @@ export class VMSetup {
     const pubKey = await this.runCommand('cat ~/.ssh/id_ed25519.pub', 'Read public key')
     
     if (!pubKey.success || !pubKey.output.trim()) {
-      console.error('Failed to read public key:', pubKey.output)
       return { publicKey: '', success: false }
     }
 
@@ -245,7 +239,7 @@ export class VMSetup {
       )
 
       if (!result.success) {
-        console.warn(`Failed to link ${repoName}:`, result.output)
+        // Failed to link repository
       }
     }
 
@@ -284,10 +278,8 @@ export class VMSetup {
    */
   async installPython(): Promise<boolean> {
     // Wait for VM to be ready first
-    console.log('Waiting for VM to be ready...')
     const vmReady = await this.waitForVMReady(15, 5000) // 15 retries, 5 seconds apart = up to 75 seconds
     if (!vmReady) {
-      console.error('VM did not become ready after waiting')
       return false
     }
 
@@ -309,14 +301,12 @@ export class VMSetup {
         } else {
           retries--
           if (retries > 0) {
-            console.log(`Command failed, retrying in 3 seconds... (${retries} retries left)`)
             await new Promise(resolve => setTimeout(resolve, 3000))
           }
         }
       }
       
       if (!success) {
-        console.error(`Failed to execute: ${cmd}`)
         return false
       }
     }
@@ -336,7 +326,7 @@ export class VMSetup {
     )
     
     if (!result.success) {
-      console.warn(`Warning installing SDK: ${result.output}`)
+      // SDK installation had issues
     }
 
     // Verify installation
@@ -387,7 +377,6 @@ export class VMSetup {
     )
 
     if (!depsInstall.success) {
-      console.error('Failed to install dependencies:', depsInstall.output)
       return { success: false }
     }
 
@@ -404,7 +393,6 @@ export class VMSetup {
     )
 
     if (!nvmInstall.success) {
-      console.error('Failed to install NVM:', nvmInstall.output)
       return { success: false }
     }
 
@@ -421,7 +409,6 @@ export class VMSetup {
     )
 
     if (!nodeInstall.success) {
-      console.error('Failed to install Node.js:', nodeInstall.output)
       return { success: false }
     }
 
@@ -498,7 +485,6 @@ echo "INSTALL_COMPLETE" >> /tmp/clawdbot-install.log
 
         if (npmRunning.output.includes('RUNNING')) {
           // npm is still running, give it more time (another 5 minutes)
-          console.log('npm still running, extending timeout...')
           this.onProgress?.({
             step: 'Install Clawdbot',
             message: 'npm still installing, extending timeout...',
@@ -519,21 +505,11 @@ echo "INSTALL_COMPLETE" >> /tmp/clawdbot-install.log
             }
 
             if (j === 29) {
-              const logResult = await this.runCommand(
-                'tail -30 /tmp/clawdbot-install.log',
-                'Get Clawdbot install log'
-              )
-              console.error('Clawdbot installation timed out (extended). Last log:', logResult.output)
               return { success: false }
             }
           }
         } else {
           // npm is not running, check log for errors
-          const logResult = await this.runCommand(
-            'tail -30 /tmp/clawdbot-install.log',
-            'Get Clawdbot install log'
-          )
-          console.error('Clawdbot installation timed out. Last log:', logResult.output)
           return { success: false }
         }
       }
@@ -546,13 +522,6 @@ echo "INSTALL_COMPLETE" >> /tmp/clawdbot-install.log
     )
 
     if (!verifyResult.success || !verifyResult.output.trim() || verifyResult.output.includes('No such file')) {
-      console.error('Clawdbot binary not found')
-      // Show install log for debugging
-      const logResult = await this.runCommand(
-        'cat /tmp/clawdbot-install.log',
-        'Get Clawdbot install log'
-      )
-      console.error('Install log:', logResult.output)
       return { success: false }
     }
 
@@ -778,7 +747,6 @@ During heartbeat, check the following:
     )
 
     if (!writeConfig.success) {
-      console.error('Failed to write Clawdbot config:', writeConfig.output)
       return false
     }
 
@@ -940,7 +908,6 @@ exit $EXIT_CODE
       )
     } catch (error) {
       // Ignore errors - process might not exist
-      console.log('No existing gateway process to kill')
     }
 
     // Wait a moment for process to die
@@ -978,7 +945,6 @@ exit $EXIT_CODE
           break
         } else {
           // Process exists but port not listening yet - wait longer
-          console.log(`Gateway process exists but port not listening yet (attempt ${attempt + 1}/5)`)
         }
       }
       
@@ -990,11 +956,10 @@ exit $EXIT_CODE
 
     // If not running, check the log for errors
     if (!isRunning) {
-      const logCheck = await this.runCommand(
+      await this.runCommand(
         'tail -20 /tmp/clawdbot.log 2>/dev/null || echo "No log file"',
         'Check gateway logs'
       )
-      console.log('Gateway startup log:', logCheck.output)
     }
 
     this.onProgress?.({
@@ -1120,7 +1085,9 @@ chmod +x ~/vault-sync-daemon.sh`,
       // 2. Install Orgo and Anthropic SDKs
       this.onProgress?.({ step: 'sdk', message: 'Installing AI SDKs...', success: true })
       const sdkOk = await this.installOrgoPythonSDK()
-      if (!sdkOk) console.warn('SDK installation had issues, continuing...')
+      if (!sdkOk) {
+        // SDK installation had issues, continuing...
+      }
 
       // 3. Generate SSH key
       this.onProgress?.({ step: 'ssh', message: 'Generating SSH key...', success: true })
@@ -1158,7 +1125,7 @@ chmod +x ~/vault-sync-daemon.sh`,
         this.onProgress?.({ step: 'knowledge', message: 'Cloning knowledge repositories...', success: true })
         const repoResult = await this.cloneRepositories(options.knowledgeRepos)
         if (!repoResult.success) {
-          console.warn('Some knowledge repos failed to clone:', repoResult.errors)
+          // Some knowledge repos failed to clone
         }
 
         // Link cloned repos to Clawdbot workspace
@@ -1184,7 +1151,9 @@ chmod +x ~/vault-sync-daemon.sh`,
           options.claudeApiKey,
           options.telegramBotToken
         )
-        if (!gatewayOk) console.warn('Gateway may still be starting, check /tmp/clawdbot.log')
+        if (!gatewayOk) {
+          // Gateway may still be starting, check /tmp/clawdbot.log
+        }
       } else {
         // Just store Claude API key if no Telegram
         this.onProgress?.({ step: 'claude', message: 'Storing Claude API key...', success: true })

@@ -36,7 +36,6 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Select VM error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to save VM provider selection' },
       { status: 500 }

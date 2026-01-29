@@ -89,10 +89,6 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/helloworld?schema=pu
 
 # Cron Job Secret (optional, for securing cron endpoints)
 CRON_SECRET=your_cron_secret_here  # Generate with: openssl rand -base64 32
-
-# Encryption key for API keys stored in database (REQUIRED in production)
-# Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-ENCRYPTION_KEY=your_encryption_key_here
 ```
 
 ### 3. Set up Database
@@ -210,8 +206,7 @@ In Vercel Dashboard → Project Settings → Environment Variables, add:
 | `ORGO_API_KEY` | From Orgo dashboard | For VM integration |
 | `CRON_SECRET` | Generate with: `openssl rand -hex 16` | For cron jobs |
 | `TELEGRAM_BOT_TOKEN` | From BotFather | Optional, for Telegram bot |
-| `TELEGRAM_USER_ID` | Your Telegram user ID | Optional, for Telegram bot |
-| `ENCRYPTION_KEY` | Key for encrypting API keys in database (generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`) | ✅ |
+| `TELEGRAM_USER_ID` | Your Telegram user ID | Optional, for Telegram bot
 
 ### 3. Set Up Production Database
 

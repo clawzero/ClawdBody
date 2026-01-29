@@ -20,7 +20,6 @@ export async function POST(request: NextRequest) {
     )
 
   } catch (error: any) {
-    console.error('Calendar connect error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to connect Calendar' },
       { status: 500 }

@@ -21,7 +21,6 @@ export async function GET(request: NextRequest) {
     )
 
   } catch (error: any) {
-    console.error('GitHub connect error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to fetch repositories' },
       { status: 500 }
@@ -44,7 +43,6 @@ export async function POST(request: NextRequest) {
     )
 
   } catch (error: any) {
-    console.error('GitHub connect error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to connect GitHub repositories' },
       { status: 500 }

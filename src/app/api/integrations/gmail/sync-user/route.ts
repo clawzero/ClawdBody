@@ -18,7 +18,6 @@ export async function POST(request: NextRequest) {
     )
 
   } catch (error: any) {
-    console.error('Gmail sync error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to sync Gmail' },
       { status: 500 }

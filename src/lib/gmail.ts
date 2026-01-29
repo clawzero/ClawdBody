@@ -80,7 +80,6 @@ export class GmailClient {
 
       return messages
     } catch (error: any) {
-      console.error('Error fetching Gmail messages:', error)
       throw new Error(`Failed to fetch Gmail messages: ${error.message}`)
     }
   }
@@ -133,7 +132,6 @@ export class GmailClient {
               })
               return messageResponse.data
             } catch (error: any) {
-              console.error(`Error fetching message ${msg.id}:`, error)
               return null
             }
           })
@@ -152,14 +150,10 @@ export class GmailClient {
         // Check if there are more pages
         pageToken = response.data.nextPageToken
         hasMore = !!pageToken
-
-        // Log progress
-        console.log(`Fetched ${allMessages.length} messages so far...`)
       }
 
       return allMessages
     } catch (error: any) {
-      console.error('Error fetching all Gmail messages:', error)
       throw new Error(`Failed to fetch all Gmail messages: ${error.message}`)
     }
   }
@@ -219,7 +213,6 @@ export class GmailClient {
               })
               return messageResponse.data
             } catch (error: any) {
-              console.error(`Error fetching message ${msg.id}:`, error)
               return null
             }
           })
@@ -238,13 +231,10 @@ export class GmailClient {
         // Check if there are more pages
         pageToken = response.data.nextPageToken
         hasMore = !!pageToken
-
-        console.log(`Fetched ${allMessages.length} new messages so far...`)
       }
 
       return allMessages
     } catch (error: any) {
-      console.error('Error fetching new Gmail messages:', error)
       throw new Error(`Failed to fetch new Gmail messages: ${error.message}`)
     }
   }
@@ -259,7 +249,6 @@ export class GmailClient {
       })
       return profile.data.emailAddress || ''
     } catch (error: any) {
-      console.error('Error fetching user email:', error)
       throw new Error(`Failed to fetch user email: ${error.message}`)
     }
   }
@@ -319,7 +308,6 @@ export class GmailClient {
 
       return response.data.id || ''
     } catch (error: any) {
-      console.error('Error sending email:', error)
       throw new Error(`Failed to send email: ${error.message}`)
     }
   }
@@ -388,7 +376,6 @@ export class GmailClient {
 
       return response.data.id || ''
     } catch (error: any) {
-      console.error('Error replying to email:', error)
       throw new Error(`Failed to reply to email: ${error.message}`)
     }
   }

@@ -17,32 +17,33 @@ import { PrismaClient } from '@prisma/client'
 import { 
   encrypt, 
   isEncrypted,
+  encryptUserData,
+  isUserDataEncrypted,
   generateEncryptionKey,
   SETUP_STATE_SENSITIVE_FIELDS,
   VM_SENSITIVE_FIELDS,
+  USER_SENSITIVE_FIELDS,
 } from '../src/lib/encryption'
 
 const prisma = new PrismaClient()
 
 async function main() {
-  console.log('🔐 Starting encryption migration...\n')
-  
-  // Check if ENCRYPTION_KEY is set
+  // Check if encryption keys are set
   const nodeEnv = process.env.NODE_ENV as string
+  
   if (!process.env.ENCRYPTION_KEY && nodeEnv !== 'development') {
-    console.log('⚠️  ENCRYPTION_KEY not set!')
-    console.log('   Generate a new key with:')
-    console.log(`   ENCRYPTION_KEY="${generateEncryptionKey()}"`)
-    console.log('\n   Add this to your .env file or Railway environment variables.\n')
-    
     if (nodeEnv !== 'development') {
       process.exit(1)
     }
-    console.log('   Running in development mode with default key...\n')
+  }
+  
+  if (!process.env.USER_DATA_ENCRYPTION_KEY && nodeEnv !== 'development') {
+    if (nodeEnv !== 'development') {
+      process.exit(1)
+    }
   }
   
   // Process SetupState records
-  console.log('📋 Processing SetupState records...')
   const setupStates = await prisma.setupState.findMany()
   let setupStateUpdated = 0
   let setupStateSkipped = 0
@@ -57,7 +58,6 @@ async function main() {
       if (value && !isEncrypted(value)) {
         updates[field] = encrypt(value)
         hasUpdates = true
-        console.log(`   ✓ Encrypting ${field} for user ${state.userId.substring(0, 8)}...`)
       }
     }
     
@@ -72,11 +72,7 @@ async function main() {
     }
   }
   
-  console.log(`   ${setupStateUpdated} SetupState records updated`)
-  console.log(`   ${setupStateSkipped} SetupState records already encrypted or empty\n`)
-  
   // Process VM records
-  console.log('🖥️  Processing VM records...')
   const vms = await prisma.vM.findMany()
   let vmUpdated = 0
   let vmSkipped = 0
@@ -91,7 +87,6 @@ async function main() {
       if (value && !isEncrypted(value)) {
         updates[field] = encrypt(value)
         hasUpdates = true
-        console.log(`   ✓ Encrypting ${field} for VM ${vm.id.substring(0, 8)}...`)
       }
     }
     
@@ -106,24 +101,26 @@ async function main() {
     }
   }
   
-  console.log(`   ${vmUpdated} VM records updated`)
-  console.log(`   ${vmSkipped} VM records already encrypted or empty\n`)
+  // Process User records (emails)
+  const users = await prisma.user.findMany()
+  let userUpdated = 0
+  let userSkipped = 0
   
-  // Summary
-  console.log('✅ Migration complete!')
-  console.log(`   Total SetupState records: ${setupStates.length}`)
-  console.log(`   Total VM records: ${vms.length}`)
-  console.log(`   Records encrypted: ${setupStateUpdated + vmUpdated}`)
-  
-  if (setupStateUpdated > 0 || vmUpdated > 0) {
-    console.log('\n⚠️  Important: Make sure ENCRYPTION_KEY is set in production!')
-    console.log('   The same key must be used to decrypt the data.')
+  for (const user of users) {
+    if (user.email && !isUserDataEncrypted(user.email)) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { email: encryptUserData(user.email) },
+      })
+      userUpdated++
+    } else {
+      userSkipped++
+    }
   }
 }
 
 main()
   .catch((error) => {
-    console.error('❌ Migration failed:', error)
     process.exit(1)
   })
   .finally(async () => {

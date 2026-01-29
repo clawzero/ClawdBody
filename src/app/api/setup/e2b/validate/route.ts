@@ -69,7 +69,6 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('E2B validation error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to validate E2B API key' },
       { status: 500 }

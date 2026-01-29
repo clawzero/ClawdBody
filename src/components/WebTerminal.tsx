@@ -71,7 +71,6 @@ export function WebTerminal({
         }),
       })
     } catch (err) {
-      console.error('Failed to send input:', err)
     }
   }, [])
 
@@ -117,7 +116,6 @@ export function WebTerminal({
         }),
       })
     } catch (err) {
-      console.error('Failed to resize terminal:', err)
     }
   }, [])
 
@@ -128,7 +126,6 @@ export function WebTerminal({
   const connect = useCallback(async (isRetry = false) => {
     // Guard against duplicate connections
     if (isConnectingRef.current || connectionState === 'connected') {
-      console.log('[WebTerminal] Skipping duplicate connect call')
       return
     }
 
@@ -204,7 +201,7 @@ export function WebTerminal({
         if (retryCountRef.current < MAX_RETRIES) {
           retryCountRef.current++
           setRetryCount(retryCountRef.current)
-          console.log(`[WebTerminal] Connection lost, retrying (${retryCountRef.current}/${MAX_RETRIES})...`)
+...`)
           
           // Wait a bit before retrying
           retryTimeoutRef.current = setTimeout(() => {
@@ -223,7 +220,7 @@ export function WebTerminal({
       if (retryCountRef.current < MAX_RETRIES) {
         retryCountRef.current++
         setRetryCount(retryCountRef.current)
-        console.log(`[WebTerminal] Connection failed, retrying (${retryCountRef.current}/${MAX_RETRIES})...`)
+...`)
         
         retryTimeoutRef.current = setTimeout(() => {
           connect(true)
@@ -256,7 +253,6 @@ export function WebTerminal({
           body: JSON.stringify({ sessionId: sessionIdRef.current }),
         })
       } catch (err) {
-        console.error('Failed to disconnect:', err)
       }
       sessionIdRef.current = null
     }
@@ -274,11 +270,9 @@ export function WebTerminal({
     
     // Prevent double initialization in React Strict Mode
     if (xtermRef.current) {
-      console.log('[WebTerminal] Already initialized, skipping')
       return
     }
 
-    console.log('[WebTerminal] Initializing terminal')
 
     const term = new XTerm({
       cursorBlink: true,
@@ -345,7 +339,6 @@ export function WebTerminal({
     resizeObserver.observe(terminalRef.current)
 
     return () => {
-      console.log('[WebTerminal] Cleaning up')
       window.removeEventListener('resize', handleResize)
       resizeObserver.disconnect()
       term.dispose()

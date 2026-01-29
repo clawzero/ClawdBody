@@ -77,7 +77,6 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Start gateway error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to start gateway' },
       { status: 500 }

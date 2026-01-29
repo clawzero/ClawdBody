@@ -266,7 +266,6 @@ function LearningSourcesContent() {
         }
       }
     } catch (error) {
-      console.error('Failed to fetch VMs:', error)
     }
   }, [vmId])
 
@@ -292,7 +291,6 @@ function LearningSourcesContent() {
         setConnectedSources(connected)
       }
     } catch (error) {
-      console.error('Failed to fetch integration status:', error)
     }
   }, [])
 
@@ -308,20 +306,17 @@ function LearningSourcesContent() {
 
     if (gmailConnected === 'true') {
       // Show success message (could use a toast library here)
-      console.log('Gmail connected successfully')
       // Trigger refresh of connector cards
       setRefreshKey(prev => prev + 1)
     }
 
     if (calendarConnected === 'true') {
       // Show success message (could use a toast library here)
-      console.log('Calendar connected successfully')
       // Trigger refresh of connector cards
       setRefreshKey(prev => prev + 1)
     }
 
     if (error) {
-      console.error('Connection error:', error)
       // Show error message
     }
   }, [searchParams])
@@ -366,7 +361,6 @@ function LearningSourcesContent() {
           })
         }
       } catch (e) {
-        console.error('Failed to check initial setup status:', e)
       }
     }
     // Run immediately on mount
@@ -448,7 +442,6 @@ function LearningSourcesContent() {
           setIsCheckingRedirect(false)
         }
       } catch (e) {
-        console.error('Failed to check initial setup status:', e)
         setIsLoadingStatus(false)
         setIsCheckingRedirect(false)
       }
@@ -501,7 +494,6 @@ function LearningSourcesContent() {
           })
         }
       } catch (e) {
-        console.error('Failed to poll setup status:', e)
         addLog('error', 'Failed to check setup status')
       }
     }
@@ -719,7 +711,6 @@ function LearningSourcesContent() {
                     alert(`Failed to delete computer: ${error.error || 'Unknown error'}`)
                   }
                 } catch (error) {
-                  console.error('Failed to delete computer:', error)
                   alert('Failed to delete computer. Please try again.')
                 }
               }}
@@ -1008,7 +999,6 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
           }
         }
       } catch (error) {
-        console.error('Failed to check integration status:', error)
       }
     }
 
@@ -1036,7 +1026,6 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
         const data = await response.json()
         setGithubRepos(data.repositories || [])
       } catch (error) {
-        console.error(`Failed to fetch GitHub repositories:`, error)
         alert(`Failed to fetch repositories. Please try again.`)
         setShowGithubDialog(false)
       } finally {
@@ -1072,7 +1061,6 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
       }
       onConnect?.()
     } catch (error) {
-      console.error(`Failed to connect ${connector.name}:`, error)
       alert(`Failed to connect ${connector.name}. Please try again.`)
       setIsConnecting(false)
     }
@@ -1108,7 +1096,6 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
         alert(`Connected ${data.repositories.length} repositories. Some repositories had cloning errors.`)
       }
     } catch (error) {
-      console.error(`Failed to connect GitHub repositories:`, error)
       alert(`Failed to connect repositories. Please try again.`)
     } finally {
       setIsConnecting(false)
@@ -1127,7 +1114,6 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-        console.error('Sync error response:', error)
         throw new Error(error.error || `HTTP ${response.status}: Failed to sync`)
       }
 
@@ -1139,7 +1125,6 @@ function ConnectorCard({ connector, index, onConnect }: { connector: Connector; 
         setIsSynced(false)
       }, 3000)
     } catch (error: any) {
-      console.error(`Failed to sync ${connector.name}:`, error)
       // Show error alert only on failure
       const errorMessage = error?.message || error?.toString() || 'Unknown error'
       alert(`Failed to sync ${connector.name}: ${errorMessage}`)
@@ -1386,7 +1371,6 @@ function SetupProgressView({
           } else if (data.error) {
             // Only log non-503 errors (503 means VM is starting, which is expected)
             if (res.status !== 503) {
-              console.error('Screenshot API error:', data.error)
             }
           }
         } else {
@@ -1399,12 +1383,10 @@ function SetupProgressView({
           const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
           // Only log non-503 errors
           if (res.status !== 503) {
-            console.error('Failed to fetch screenshot:', errorData.error)
           }
         }
       } catch (error) {
         // Network errors are also expected during VM startup
-        console.error('Failed to fetch screenshot:', error)
         // Don't clear the existing screenshot on transient errors
       }
     }
@@ -1516,7 +1498,6 @@ function SetupProgressView({
                 alt="VM Screen"
                 className="w-full h-full object-contain"
                 onError={(e) => {
-                  console.error('Failed to load screenshot image')
                   setCurrentScreenshot(null)
                 }}
               />
@@ -1749,7 +1730,6 @@ function ComputerConnectedView({
           } else if (data.error) {
             // Only log non-503 errors (503 means VM is starting, which is expected)
             if (res.status !== 503) {
-              console.error('Screenshot API error:', data.error)
             }
           }
         } else {
@@ -1758,7 +1738,6 @@ function ComputerConnectedView({
             consecutive404s++
             const errorData = await res.json().catch(() => ({ error: 'Computer not found' }))
             if (errorData.deleted || consecutive404s >= max404s) {
-              console.log('Computer was deleted, stopping screenshot polling')
               // Clear screenshot and stop polling
               setCurrentScreenshot(null)
               if (intervalId) {
@@ -1783,12 +1762,10 @@ function ComputerConnectedView({
           const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
           // Only log non-503, non-404 errors
           if (res.status !== 503 && res.status !== 404) {
-            console.error('Failed to fetch screenshot:', errorData.error)
           }
         }
       } catch (error) {
         // Network errors are also expected during VM startup
-        console.error('Failed to fetch screenshot:', error)
         // Don't clear the existing screenshot on transient errors
       }
     }
@@ -1822,7 +1799,6 @@ function ComputerConnectedView({
     try {
       await onDelete()
     } catch (error) {
-      console.error('Delete error:', error)
     } finally {
       setIsDeleting(false)
     }
@@ -1912,7 +1888,6 @@ function ComputerConnectedView({
                   alt="VM Screen"
                   className="w-full h-full object-contain"
                   onError={(e) => {
-                    console.error('Failed to load screenshot image')
                     setCurrentScreenshot(null) // Clear on error to show loading/error state
                   }}
                 />

@@ -20,7 +20,6 @@ export async function POST(request: NextRequest) {
     )
 
   } catch (error: any) {
-    console.error('Gmail connect error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to connect Gmail' },
       { status: 500 }

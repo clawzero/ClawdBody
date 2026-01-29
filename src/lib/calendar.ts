@@ -61,7 +61,6 @@ export class CalendarClient {
       const primaryCalendar = response.data.items?.find((cal: any) => cal.primary)
       return primaryCalendar?.id || 'primary'
     } catch (error: any) {
-      console.error('Error fetching calendar email:', error)
       throw new Error(`Failed to fetch calendar email: ${error.message}`)
     }
   }
@@ -80,7 +79,6 @@ export class CalendarClient {
 
       return response.data.items || []
     } catch (error: any) {
-      console.error('Error fetching calendar events:', error)
       throw new Error(`Failed to fetch calendar events: ${error.message}`)
     }
   }
@@ -108,13 +106,10 @@ export class CalendarClient {
 
         pageToken = response.data.nextPageToken
         hasMore = !!pageToken
-
-        console.log(`Fetched ${allEvents.length} events so far...`)
       }
 
       return allEvents
     } catch (error: any) {
-      console.error('Error fetching all calendar events:', error)
       throw new Error(`Failed to fetch all calendar events: ${error.message}`)
     }
   }
@@ -143,13 +138,10 @@ export class CalendarClient {
 
         pageToken = response.data.nextPageToken
         hasMore = !!pageToken
-
-        console.log(`Fetched ${allEvents.length} new events so far...`)
       }
 
       return allEvents
     } catch (error: any) {
-      console.error('Error fetching new calendar events:', error)
       throw new Error(`Failed to fetch new calendar events: ${error.message}`)
     }
   }
@@ -218,7 +210,6 @@ export class CalendarClient {
 
       return response.data
     } catch (error: any) {
-      console.error('Error creating calendar event:', error)
       throw new Error(`Failed to create calendar event: ${error.message}`)
     }
   }
@@ -292,7 +283,6 @@ export class CalendarClient {
 
       return response.data
     } catch (error: any) {
-      console.error('Error updating calendar event:', error)
       throw new Error(`Failed to update calendar event: ${error.message}`)
     }
   }
@@ -308,7 +298,6 @@ export class CalendarClient {
         eventId,
       })
     } catch (error: any) {
-      console.error('Error deleting calendar event:', error)
       throw new Error(`Failed to delete calendar event: ${error.message}`)
     }
   }

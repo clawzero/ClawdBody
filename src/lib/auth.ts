@@ -2,6 +2,7 @@ import { NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import { PrismaAdapter } from '@auth/prisma-adapter'
 import { prisma } from '@/lib/prisma'
+import { encryptUserData, isUserDataEncrypted } from '@/lib/encryption'
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma) as any,
@@ -59,9 +60,16 @@ export const authOptions: NextAuthOptions = {
             },
           })
         }
+
+        // Encrypt user email if not already encrypted
+        if (user.email && !isUserDataEncrypted(user.email)) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { email: encryptUserData(user.email) },
+          })
+        }
       } catch (error) {
         // Don't block authentication if setup state creation fails
-        console.error('Failed to create setup state during sign in:', error)
       }
 
       return true

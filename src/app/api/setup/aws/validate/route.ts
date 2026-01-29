@@ -91,7 +91,6 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('AWS validation error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to validate AWS credentials' },
       { status: 500 }

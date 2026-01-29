@@ -29,7 +29,6 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('AWS configure error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to save AWS configuration' },
       { status: 500 }

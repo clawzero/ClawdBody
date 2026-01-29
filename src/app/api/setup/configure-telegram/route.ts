@@ -215,7 +215,6 @@ export async function POST(request: NextRequest) {
         clawdbotVersion = versionResult.output.trim()
       }
     } catch (error) {
-      console.warn('Could not get Clawdbot version, using default:', error)
     }
 
     // Configure Telegram
@@ -255,7 +254,6 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Configure Telegram error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to configure Telegram' },
       { status: 500 }

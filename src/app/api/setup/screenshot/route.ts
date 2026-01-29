@@ -86,7 +86,6 @@ export async function GET(request: NextRequest) {
         
         // Handle 502 Bad Gateway errors gracefully (often means VM is starting up or proxy issue)
         if (status === 502) {
-          console.log('Orgo screenshot API returned 502 (VM may still be starting):', errorText)
           return NextResponse.json(
             { error: 'VM is not ready yet. Please wait a moment and try again.' },
             { status: 503 } // Service Unavailable - indicates temporary unavailability
@@ -95,7 +94,6 @@ export async function GET(request: NextRequest) {
         
         // Handle 404 - computer doesn't exist (deleted from Orgo)
         if (status === 404) {
-          console.log('Computer not found in Orgo - may have been deleted')
           // Reset the setup state since computer is gone
           try {
             await prisma.setupState.update({
@@ -111,15 +109,13 @@ export async function GET(request: NextRequest) {
               },
             })
           } catch (updateError) {
-            console.error('Failed to reset state after 404:', updateError)
+            // Failed to reset state
           }
           return NextResponse.json(
             { error: 'Computer not found - it may have been deleted', deleted: true },
             { status: 404 }
           )
         }
-        
-        console.error('Orgo screenshot API error:', status, errorText)
         throw new Error(`Failed to fetch screenshot: ${status}`)
       }
 
@@ -154,7 +150,6 @@ export async function GET(request: NextRequest) {
                 imageUrl: imageData, // Also return the URL for direct use if needed
               })
             } catch (urlError) {
-              console.error('Failed to fetch image from URL:', urlError)
               // Fall through to return URL directly
               return NextResponse.json({
                 imageUrl: imageData, // Return URL directly - frontend can use it
@@ -183,7 +178,6 @@ export async function GET(request: NextRequest) {
             imageUrl: imageData,
           })
         } catch (jsonError) {
-          console.error('Failed to parse JSON response:', jsonError)
           throw new Error('Invalid JSON response from screenshot API')
         }
       } else if (contentType.includes('image/')) {
@@ -211,7 +205,6 @@ export async function GET(request: NextRequest) {
     } catch (fetchError: any) {
       clearTimeout(timeoutId)
       if (fetchError.name === 'AbortError' || fetchError.message?.includes('timeout')) {
-        console.error('Screenshot request timed out')
         return NextResponse.json(
           { error: 'Screenshot request timed out. The VM may still be starting up.' },
           { status: 504 }
@@ -220,7 +213,6 @@ export async function GET(request: NextRequest) {
       throw fetchError
     }
   } catch (error) {
-    console.error('Screenshot error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to get screenshot' },
       { status: 500 }

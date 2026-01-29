@@ -44,7 +44,6 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Terminal disconnect error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to disconnect terminal' },
       { status: 500 }

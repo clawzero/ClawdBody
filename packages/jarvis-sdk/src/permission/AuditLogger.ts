@@ -61,7 +61,7 @@ export class AuditLogger {
       try {
         await this.persistFn(entry);
       } catch (error) {
-        console.error('Failed to persist audit entry:', error);
+
       }
     }
 

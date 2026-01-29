@@ -245,7 +245,6 @@ export default function SelectVMPage() {
         setCredentials(data.credentials || null)
       }
     } catch (e) {
-      console.error('Failed to load VMs:', e)
     } finally {
       setIsLoadingVMs(false)
     }
@@ -335,7 +334,6 @@ export default function SelectVMPage() {
         }
       }
     } catch (e) {
-      console.error('Failed to fetch Orgo projects:', e)
     }
   }
 
@@ -352,7 +350,6 @@ export default function SelectVMPage() {
         setAwsInstanceTypes(data.instanceTypes || [])
       }
     } catch (e) {
-      console.error('Failed to fetch AWS data:', e)
     }
   }
 
@@ -369,7 +366,6 @@ export default function SelectVMPage() {
         setE2bTimeoutOptions(data.timeoutOptions || [])
       }
     } catch (e) {
-      console.error('Failed to fetch E2B data:', e)
     }
   }
 

@@ -31,7 +31,6 @@ class TerminalSessionManager implements ITerminalSessionManager {
     
     this.sessions.set(sessionId, provider)
     this.resetSessionTimeout(sessionId)
-    console.log(`[Session Manager] Added session ${sessionId}`)
   }
 
   async createSession(config: TerminalConfig | SSHConfig): Promise<string> {
@@ -65,7 +64,6 @@ class TerminalSessionManager implements ITerminalSessionManager {
     // Set session timeout
     this.resetSessionTimeout(sessionId)
 
-    console.log(`[Session Manager] Created session ${sessionId} for provider ${config.provider}`)
     return sessionId
   }
 
@@ -90,8 +88,6 @@ class TerminalSessionManager implements ITerminalSessionManager {
         clearTimeout(timeout)
         this.sessionTimeouts.delete(sessionId)
       }
-
-      console.log(`[Session Manager] Closed session ${sessionId}`)
     }
   }
 
@@ -113,9 +109,8 @@ class TerminalSessionManager implements ITerminalSessionManager {
     const userSessions = sessionIds.filter(id => id.startsWith(`${userId}-`))
     
     for (const sessionId of userSessions) {
-      console.log(`[Session Manager] Cleaning up stale session ${sessionId} for user ${userId}`)
-      this.closeSession(sessionId).catch(err => {
-        console.error(`[Session Manager] Error cleaning up session ${sessionId}:`, err)
+      this.closeSession(sessionId).catch(() => {
+        // Error cleaning up session
       })
     }
   }
@@ -129,7 +124,6 @@ class TerminalSessionManager implements ITerminalSessionManager {
 
     // Set new timeout
     const timeout = setTimeout(async () => {
-      console.log(`[Session Manager] Session ${sessionId} timed out`)
       await this.closeSession(sessionId)
     }, this.SESSION_TIMEOUT)
 

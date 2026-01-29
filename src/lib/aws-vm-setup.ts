@@ -117,7 +117,6 @@ export class AWSVMSetup {
         // If it's a connection error, wait and retry
         if (attempt < retries && (message.includes('ECONNREFUSED') || message.includes('ETIMEDOUT') || message.includes('SSH'))) {
           const waitTime = (attempt + 1) * 5000 // Exponential backoff: 5s, 10s
-          console.log(`Command failed (attempt ${attempt + 1}/${retries + 1}), retrying in ${waitTime}ms...`)
           this.disconnectSSH()
           await new Promise(resolve => setTimeout(resolve, waitTime))
           continue
@@ -184,7 +183,6 @@ export class AWSVMSetup {
         }
       } catch (error) {
         // VM not ready yet, continue waiting
-        console.log(`Waiting for VM to be ready (attempt ${i + 1}/${maxRetries})...`)
         this.disconnectSSH()
       }
       
@@ -206,7 +204,6 @@ export class AWSVMSetup {
     )
     
     if (!mkdirResult.success) {
-      console.error('Failed to create .ssh directory:', mkdirResult.output)
       return { publicKey: '', success: false }
     }
 
@@ -223,7 +220,6 @@ export class AWSVMSetup {
     )
     
     if (!keyGen.success) {
-      console.error('Failed to generate SSH key:', keyGen.output)
       return { publicKey: '', success: false }
     }
 
@@ -231,7 +227,6 @@ export class AWSVMSetup {
     const pubKey = await this.runCommand('cat ~/.ssh/id_ed25519.pub', 'Read public key')
     
     if (!pubKey.success || !pubKey.output.trim()) {
-      console.error('Failed to read public key:', pubKey.output)
       return { publicKey: '', success: false }
     }
 
@@ -300,15 +295,12 @@ export class AWSVMSetup {
    * Install Python, Git, SSH and other essential tools
    */
   async installPython(): Promise<boolean> {
-    console.log('Waiting for AWS EC2 instance to be ready...')
     const vmReady = await this.waitForVMReady(20, 15000)
     if (!vmReady) {
-      console.error('VM did not become ready after waiting')
       return false
     }
 
     // Wait for cloud-init to complete (apt-get is locked during cloud-init)
-    console.log('Waiting for cloud-init to complete...')
     const cloudInitCommands = [
       // Wait for cloud-init to finish
       'cloud-init status --wait || true',
@@ -338,14 +330,12 @@ export class AWSVMSetup {
         } else {
           retries--
           if (retries > 0) {
-            console.log(`Command failed, retrying in 10 seconds... (${retries} retries left)`)
             await new Promise(resolve => setTimeout(resolve, 10000))
           }
         }
       }
       
       if (!success) {
-        console.error(`Failed to execute: ${cmd}`)
         return false
       }
     }
@@ -363,7 +353,7 @@ export class AWSVMSetup {
     )
     
     if (!result.success) {
-      console.warn(`Warning installing SDK: ${result.output}`)
+      // SDK installation had issues
     }
 
     const verify = await this.runCommand(
@@ -406,7 +396,6 @@ export class AWSVMSetup {
     )
 
     if (!nvmInstall.success) {
-      console.error('Failed to install NVM:', nvmInstall.output)
       return { success: false }
     }
 
@@ -422,7 +411,6 @@ export class AWSVMSetup {
     )
 
     if (!nodeInstall.success) {
-      console.error('Failed to install Node.js:', nodeInstall.output)
       return { success: false }
     }
 
@@ -438,7 +426,6 @@ export class AWSVMSetup {
     )
 
     if (!clawdbotInstall.success) {
-      console.error('Failed to install Clawdbot:', clawdbotInstall.output)
       return { success: false }
     }
 
@@ -574,7 +561,6 @@ Your workspace is at /home/ubuntu/clawd.
     )
 
     if (!writeConfig.success) {
-      console.error('Failed to write Clawdbot config:', writeConfig.output)
       return false
     }
 
@@ -707,7 +693,6 @@ exit $EXIT_CODE
           break
         } else {
           // Process exists but port not listening yet - wait longer
-          console.log(`Gateway process exists but port not listening yet (attempt ${attempt + 1}/5)`)
         }
       }
       
@@ -719,11 +704,10 @@ exit $EXIT_CODE
 
     // If not running, check the log for errors
     if (!isRunning) {
-      const logCheck = await this.runCommand(
+      await this.runCommand(
         'tail -20 /tmp/clawdbot.log 2>/dev/null || echo "No log file"',
         'Check gateway logs'
       )
-      console.log('Gateway startup log:', logCheck.output)
     }
 
     this.onProgress?.({

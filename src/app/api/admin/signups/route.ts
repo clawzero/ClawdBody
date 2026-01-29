@@ -33,7 +33,6 @@ export async function GET() {
       }))
     })
   } catch (error) {
-    console.error('Error fetching signups:', error)
     return NextResponse.json(
       { error: 'Failed to fetch signups' },
       { status: 500 }

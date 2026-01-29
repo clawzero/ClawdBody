@@ -134,7 +134,7 @@ export class AgentOrchestrator {
       const vmSetup = new VMSetupAdapter(this.orgo, computer.id, {
         onProgress: (progress) => {
           // Could emit progress events here
-          console.log(`[${agent.name}] ${progress.step}: ${progress.message}`);
+
         },
       });
 
@@ -243,7 +243,7 @@ export class AgentOrchestrator {
       await this.orgo.deleteComputer(agent.computerId);
     } catch (error) {
       // Log but continue
-      console.error(`Failed to delete VM for agent ${agentId}:`, error);
+
     }
 
     this.agents.delete(agentId);
@@ -515,7 +515,7 @@ export class AgentOrchestrator {
         try {
           handler(event);
         } catch (error) {
-          console.error(`Event handler error for ${type}:`, error);
+
         }
       }
     }
@@ -527,7 +527,7 @@ export class AgentOrchestrator {
         try {
           handler(event);
         } catch (error) {
-          console.error(`Wildcard event handler error:`, error);
+
         }
       }
     }

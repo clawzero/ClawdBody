@@ -80,7 +80,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/learning-sources?calendar_connected=true', request.url))
 
   } catch (error: any) {
-    console.error('Calendar callback error:', error)
     return NextResponse.redirect(new URL('/learning-sources?error=calendar_callback_failed', request.url))
   }
 }

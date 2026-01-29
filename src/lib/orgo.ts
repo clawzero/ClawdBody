@@ -35,7 +35,6 @@ export class OrgoClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${ORGO_API_BASE}${endpoint}`
-    console.log(`[Orgo API] ${options.method || 'GET'} ${url}`)
     
     // Add timeout to fetch requests (60 seconds for long operations like computer creation)
     const timeoutMs = 60000
@@ -56,7 +55,6 @@ export class OrgoClient {
       clearTimeout(timeoutId)
 
       const responseText = await response.text()
-      console.log(`[Orgo API] Response ${response.status}: ${responseText.substring(0, 200)}`)
 
       if (!response.ok) {
         let errorMessage = `Orgo API error: ${response.status}`

@@ -46,7 +46,6 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error: any) {
-    console.error('Cron job error:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to run cron job' },
       { status: 500 }

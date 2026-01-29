@@ -40,19 +40,16 @@ export class SSHTerminalProvider implements ITerminalProvider {
       this.client = new Client()
 
       this.client.on('ready', () => {
-        console.log(`[SSH Terminal] Connected to ${this.config.host}`)
         this.connected = true
         resolve(true)
       })
 
       this.client.on('error', (err) => {
-        console.error(`[SSH Terminal] Connection error:`, err.message)
         this.connected = false
         resolve(false)
       })
 
       this.client.on('close', () => {
-        console.log(`[SSH Terminal] Connection closed`)
         this.connected = false
         this.shell = null
       })
@@ -67,7 +64,6 @@ export class SSHTerminalProvider implements ITerminalProvider {
           keepaliveInterval: 10000,
         })
       } catch (error) {
-        console.error(`[SSH Terminal] Failed to initiate connection:`, error)
         resolve(false)
       }
     })
@@ -227,7 +223,6 @@ export class SSHTerminalProvider implements ITerminalProvider {
         { term: 'xterm-256color', cols, rows },
         (err, stream) => {
           if (err) {
-            console.error(`[SSH Terminal] Failed to start shell:`, err.message)
             resolve(false)
             return
           }

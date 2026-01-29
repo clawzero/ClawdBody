@@ -63,7 +63,6 @@ export class E2BVMSetup {
         // If it's a connection error, wait and retry
         if (attempt < retries && (message.includes('timeout') || message.includes('connection'))) {
           const waitTime = (attempt + 1) * 2000
-          console.log(`Command failed (attempt ${attempt + 1}/${retries + 1}), retrying in ${waitTime}ms...`)
           await new Promise(resolve => setTimeout(resolve, waitTime))
           continue
         }
@@ -92,7 +91,6 @@ export class E2BVMSetup {
     )
 
     if (!mkdirResult.success) {
-      console.error('Failed to create .ssh directory:', mkdirResult.output)
       return { publicKey: '', success: false }
     }
 
@@ -109,7 +107,6 @@ export class E2BVMSetup {
     )
 
     if (!keyGen.success) {
-      console.error('Failed to generate SSH key:', keyGen.output)
       return { publicKey: '', success: false }
     }
 
@@ -117,7 +114,6 @@ export class E2BVMSetup {
     const pubKey = await this.runCommand('cat ~/.ssh/id_ed25519.pub', 'Read public key')
 
     if (!pubKey.success || !pubKey.output.trim()) {
-      console.error('Failed to read public key:', pubKey.output)
       return { publicKey: '', success: false }
     }
 
@@ -197,7 +193,7 @@ export class E2BVMSetup {
     for (const cmd of commands) {
       const result = await this.runCommand(cmd, 'Install tools')
       if (!result.success) {
-        console.warn(`Warning installing tools: ${result.output}`)
+        // Tools installation had issues
       }
     }
 
@@ -234,7 +230,6 @@ export class E2BVMSetup {
     )
 
     if (!nvmInstall.success) {
-      console.error('Failed to install NVM:', nvmInstall.output)
       return { success: false }
     }
 
@@ -250,7 +245,6 @@ export class E2BVMSetup {
     )
 
     if (!nodeInstall.success) {
-      console.error('Failed to install Node.js:', nodeInstall.output)
       return { success: false }
     }
 
@@ -266,7 +260,6 @@ export class E2BVMSetup {
     )
 
     if (!clawdbotInstall.success) {
-      console.error('Failed to install Clawdbot:', clawdbotInstall.output)
       return { success: false }
     }
 
@@ -521,7 +514,6 @@ exit $EXIT_CODE
           break
         } else {
           // Process exists but port not listening yet - wait longer
-          console.log(`Gateway process exists but port not listening yet (attempt ${attempt + 1}/5)`)
         }
       }
       
@@ -533,11 +525,10 @@ exit $EXIT_CODE
 
     // If not running, check the log for errors
     if (!isRunning) {
-      const logCheck = await this.runCommand(
+      await this.runCommand(
         'tail -20 /tmp/clawdbot.log 2>/dev/null || echo "No log file"',
         'Check gateway logs'
       )
-      console.log('Gateway startup log:', logCheck.output)
     }
 
     this.onProgress?.({

@@ -15,7 +15,7 @@ import type { SetupState } from '@prisma/client'
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
-    
+
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -49,8 +49,8 @@ export async function POST(request: NextRequest) {
     if (vmProvider === 'orgo') {
       const orgoApiKey = setupState?.orgoApiKey
       if (!orgoApiKey) {
-        return NextResponse.json({ 
-          error: 'Orgo API key not configured. Please go back and configure your Orgo API key.' 
+        return NextResponse.json({
+          error: 'Orgo API key not configured. Please go back and configure your Orgo API key.'
         }, { status: 400 })
       }
     } else if (vmProvider === 'aws') {
@@ -59,8 +59,8 @@ export async function POST(request: NextRequest) {
       const awsAccessKeyId = awsState?.awsAccessKeyId
       const awsSecretAccessKey = awsState?.awsSecretAccessKey
       if (!awsAccessKeyId || !awsSecretAccessKey) {
-        return NextResponse.json({ 
-          error: 'AWS credentials not configured. Please go back and configure your AWS credentials.' 
+        return NextResponse.json({
+          error: 'AWS credentials not configured. Please go back and configure your AWS credentials.'
         }, { status: 400 })
       }
     } else if (vmProvider === 'e2b') {
@@ -68,13 +68,13 @@ export async function POST(request: NextRequest) {
       const e2bState = setupState as SetupState & { e2bApiKey?: string }
       const e2bApiKey = e2bState?.e2bApiKey
       if (!e2bApiKey) {
-        return NextResponse.json({ 
-          error: 'E2B API key not configured. Please go back and configure your E2B API key.' 
+        return NextResponse.json({
+          error: 'E2B API key not configured. Please go back and configure your E2B API key.'
         }, { status: 400 })
       }
     } else {
-      return NextResponse.json({ 
-        error: `Unsupported VM provider: ${vmProvider}` 
+      return NextResponse.json({
+        error: `Unsupported VM provider: ${vmProvider}`
       }, { status: 400 })
     }
 
@@ -120,11 +120,11 @@ export async function POST(request: NextRequest) {
     // Note: claudeApiKey is passed as-is (plaintext from request), but provider keys are decrypted from DB
     if (vmProvider === 'aws') {
       // Type assertion to access AWS fields
-      const awsState = setupState as SetupState & { 
+      const awsState = setupState as SetupState & {
         awsAccessKeyId?: string
         awsSecretAccessKey?: string
         awsRegion?: string
-        awsInstanceType?: string 
+        awsInstanceType?: string
       }
       // Decrypt stored AWS credentials
       const decryptedAccessKeyId = decrypt(awsState.awsAccessKeyId!)
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
         telegramBotToken,
         telegramUserId,
         vmId // Pass vmId
-      ).catch(console.error)
+      ).catch(() => { })
     } else if (vmProvider === 'e2b') {
       // Type assertion to access E2B fields
       const e2bState = setupState as SetupState & { e2bApiKey?: string }
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
         telegramBotToken,
         telegramUserId,
         vmId // Pass vmId
-      ).catch(console.error)
+      ).catch(() => { })
     } else {
       // Type assertion to access Orgo-specific fields (TypeScript may have stale types cached)
       const orgoVM = vm as (typeof vm & { orgoRam?: number; orgoCpu?: number }) | null
@@ -170,18 +170,17 @@ export async function POST(request: NextRequest) {
         vmId, // Pass vmId
         orgoVM?.orgoRam || 4, // Pass RAM (default 4 GB)
         orgoVM?.orgoCpu || 2  // Pass CPU (default 2 cores)
-      ).catch(console.error)
+      ).catch(() => { })
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       message: 'Setup started',
       setupId: setupState.id,
       provider: vmProvider,
     })
 
   } catch (error) {
-    console.error('Setup start error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to start setup' },
       { status: 500 }
@@ -190,8 +189,8 @@ export async function POST(request: NextRequest) {
 }
 
 async function runSetupProcess(
-  userId: string, 
-  claudeApiKey: string, 
+  userId: string,
+  claudeApiKey: string,
   orgoApiKey: string,
   projectName: string,
   telegramBotToken?: string,
@@ -217,7 +216,7 @@ async function runSetupProcess(
       where: { userId },
       data: updates,
     })
-    
+
     // Also update VM model if vmId is provided
     if (vmId) {
       const vmUpdates: Record<string, unknown> = {}
@@ -230,7 +229,7 @@ async function runSetupProcess(
       if (updates.orgoComputerId !== undefined) vmUpdates.orgoComputerId = updates.orgoComputerId
       if (updates.orgoComputerUrl !== undefined) vmUpdates.orgoComputerUrl = updates.orgoComputerUrl
       if (updates.errorMessage !== undefined) vmUpdates.errorMessage = updates.errorMessage
-      
+
       if (Object.keys(vmUpdates).length > 0) {
         await prisma.vM.update({
           where: { id: vmId },
@@ -262,8 +261,6 @@ async function runSetupProcess(
 
     // Check if VM is already provisioned (created during "Add VM" step)
     if (existingVM?.vmCreated && existingVM?.orgoComputerId) {
-      console.log(`Using existing Orgo computer: ${existingVM.orgoComputerId}`)
-      
       // Use the existing computer
       computer = {
         id: existingVM.orgoComputerId,
@@ -273,7 +270,7 @@ async function runSetupProcess(
         id: existingVM.orgoProjectId || '',
         name: existingVM.orgoProjectName || projectName,
       }
-      
+
       await updateStatus({
         status: 'provisioning',
         orgoProjectId: project.id,
@@ -284,27 +281,23 @@ async function runSetupProcess(
       })
     } else {
       // 1. Create Orgo project and VM
-      console.log(`Creating Orgo project and VM in project "${projectName}"...`)
       await updateStatus({ status: 'provisioning' })
 
       // First, find the project by name to get its ID, or create if it doesn't exist
       const projects = await orgoClient.listProjects()
       project = projects.find(p => p.name === projectName) || { id: '', name: projectName }
-      
+
       if (!project.id) {
         // Project doesn't exist - create it
-        console.log(`Project "${projectName}" not found, creating...`)
         try {
           project = await orgoClient.createProject(projectName)
-          console.log(`Created project "${projectName}" with ID: ${project.id}`)
         } catch (createErr: any) {
           // If project creation fails, it might be because the API doesn't support explicit creation
           // In that case, some APIs create projects implicitly - we'll try with an empty ID
-          console.warn(`Could not create project explicitly: ${createErr.message}. Trying implicit creation...`)
           project = { id: '', name: projectName }
         }
       }
-      
+
       await updateStatus({ orgoProjectId: project.id || '' })
 
       const computerName = generateComputerName()
@@ -312,7 +305,7 @@ async function runSetupProcess(
       // Retry logic for computer creation (may timeout but still succeed)
       let retries = 3
       let lastError: Error | null = null
-      
+
       while (retries > 0) {
         try {
           // If project ID is empty, try using project name instead (some APIs support this)
@@ -322,7 +315,7 @@ async function runSetupProcess(
             ram: orgoRam as 1 | 2 | 4 | 8 | 16 | 32 | 64,
             cpu: orgoCpu as 1 | 2 | 4 | 8 | 16,
           })
-          
+
           // If we didn't have a project ID, update it from the created computer's project info
           if (!project.id && computer.project_name) {
             // Try to get the updated project list to find the ID
@@ -333,37 +326,34 @@ async function runSetupProcess(
               await updateStatus({ orgoProjectId: createdProject.id })
             }
           }
-          
+
           break // Success, exit retry loop
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error))
-          console.log(`Computer creation attempt failed (${retries} retries left):`, lastError.message)
-          
+
           // If it's a timeout, the computer might still be created - check if it exists
           if (lastError.message.includes('timed out') || lastError.message.includes('ETIMEDOUT')) {
-            console.log('Timeout detected, checking if computer was created...')
             try {
               // Wait a bit and check if computer exists
               await new Promise(resolve => setTimeout(resolve, 5000))
               const computers = await orgoClient.listComputers(project.name || projectName)
               const existingComputer = computers.find(c => c.name === computerName)
               if (existingComputer) {
-                console.log('Computer was created despite timeout!')
                 computer = existingComputer
                 break
               }
             } catch (checkError) {
-              console.log('Could not verify computer creation:', checkError)
+              // Could not verify computer creation
             }
           }
-          
+
           retries--
           if (retries > 0) {
             await new Promise(resolve => setTimeout(resolve, 3000)) // Wait before retry
           }
         }
       }
-      
+
       if (!computer) {
         throw lastError || new Error('Failed to create computer after retries')
       }
@@ -376,35 +366,30 @@ async function runSetupProcess(
     }
 
     // Wait a bit for VM to initialize before trying to configure it
-    console.log('Waiting for VM to initialize...')
     await new Promise(resolve => setTimeout(resolve, 10000)) // Wait 10 seconds
-    
+
     await updateStatus({ vmCreated: true, vmStatus: 'running' })
 
     // 2. Configure VM
-    console.log('Configuring VM...')
     await updateStatus({ status: 'configuring_vm' })
 
-    const vmSetup = new VMSetup(orgoClient, computer.id, (progress) => {
-      console.log(`[VM Setup] ${progress.step}: ${progress.message}`)
+    const vmSetup = new VMSetup(orgoClient, computer.id, () => {
+      // Progress callback
     })
 
     // Install Python and essential tools
-    console.log('Installing Python and essential tools...')
     const pythonSuccess = await vmSetup.installPython()
     if (!pythonSuccess) {
       throw new Error('Failed to install Python and essential tools on VM')
     }
 
     // Install Orgo and Anthropic Python SDKs for computer use
-    console.log('Installing Orgo and Anthropic SDKs...')
     const sdkSuccess = await vmSetup.installOrgoPythonSDK()
     if (!sdkSuccess) {
-      console.warn('SDK installation had issues, continuing...')
+      // SDK installation had issues, continuing...
     }
 
     // Install Clawdbot (NVM + Node.js 22 + Clawdbot)
-    console.log('Installing Clawdbot...')
     const clawdbotResult = await vmSetup.installClawdbot()
     if (!clawdbotResult.success) {
       throw new Error('Failed to install Clawdbot')
@@ -416,7 +401,6 @@ async function runSetupProcess(
     const finalTelegramUserId = telegramUserId || process.env.TELEGRAM_USER_ID
 
     if (finalTelegramToken) {
-      console.log('Configuring Clawdbot with Telegram...')
       const telegramSuccess = await vmSetup.setupClawdbotTelegram({
         claudeApiKey,
         telegramBotToken: finalTelegramToken,
@@ -429,14 +413,8 @@ async function runSetupProcess(
       await updateStatus({ telegramConfigured: telegramSuccess })
 
       if (telegramSuccess) {
-        console.log('Starting Clawdbot gateway...')
         const gatewaySuccess = await vmSetup.startClawdbotGateway(claudeApiKey, finalTelegramToken)
         await updateStatus({ gatewayStarted: gatewaySuccess })
-        
-        if (!gatewaySuccess) {
-          console.warn('⚠️  Gateway failed to start. Check /tmp/clawdbot.log on the VM for details.')
-          // Don't fail the entire setup, but log the warning
-        }
       }
     } else {
       // Just store Claude API key if no Telegram
@@ -445,10 +423,8 @@ async function runSetupProcess(
 
     // Setup complete!
     await updateStatus({ status: 'ready' })
-    console.log('Setup complete!')
 
   } catch (error) {
-    console.error('Setup process error:', error)
     await updateStatus({
       status: 'failed',
       errorMessage: error instanceof Error ? error.message : 'Unknown error occurred',
@@ -489,7 +465,7 @@ async function runAWSSetupProcess(
       where: { userId },
       data: updates,
     })
-    
+
     // Also update VM model if vmId is provided
     if (vmId) {
       const vmUpdates: Record<string, unknown> = {}
@@ -503,7 +479,7 @@ async function runAWSSetupProcess(
       if (updates.awsPublicIp !== undefined) vmUpdates.awsPublicIp = updates.awsPublicIp
       if (updates.awsPrivateKey !== undefined) vmUpdates.awsPrivateKey = updates.awsPrivateKey
       if (updates.errorMessage !== undefined) vmUpdates.errorMessage = updates.errorMessage
-      
+
       if (Object.keys(vmUpdates).length > 0) {
         await prisma.vM.update({
           where: { id: vmId },
@@ -529,7 +505,6 @@ async function runAWSSetupProcess(
     })
 
     // 1. Create AWS EC2 Instance
-    console.log(`Creating AWS EC2 instance in region ${awsRegion}...`)
     await updateStatus({ status: 'provisioning', vmStatus: 'creating' })
 
     const instanceName = generateInstanceName()
@@ -548,7 +523,6 @@ async function runAWSSetupProcess(
     })
 
     // Wait for instance to be running
-    console.log('Waiting for EC2 instance to be running...')
     await new Promise(resolve => setTimeout(resolve, 30000)) // Wait 30 seconds for instance to fully boot
 
     // Get updated instance info with public IP
@@ -559,10 +533,7 @@ async function runAWSSetupProcess(
       vmStatus: 'running',
     })
 
-    console.log(`EC2 instance ${instance.id} is running at ${updatedInstance.publicIp}`)
-
     // 2. Configure VM
-    console.log('Configuring EC2 instance...')
     await updateStatus({ status: 'configuring_vm' })
 
     awsVMSetup = new AWSVMSetup(
@@ -570,24 +541,21 @@ async function runAWSSetupProcess(
       instance.id,
       privateKey,
       updatedInstance.publicIp,
-      (progress) => {
-        console.log(`[AWS VM Setup] ${progress.step}: ${progress.message}`)
+      () => {
+        // Progress callback
       }
     )
 
     // Install Python and essential tools
-    console.log('Installing Python and essential tools...')
     const pythonSuccess = await awsVMSetup.installPython()
     if (!pythonSuccess) {
       throw new Error('Failed to install Python and essential tools on VM')
     }
 
     // Install Anthropic SDKs
-    console.log('Installing Anthropic SDKs...')
     await awsVMSetup.installAnthropicSDK()
 
     // Install Clawdbot
-    console.log('Installing Clawdbot...')
     const clawdbotResult = await awsVMSetup.installClawdbot()
     if (!clawdbotResult.success) {
       throw new Error('Failed to install Clawdbot')
@@ -599,7 +567,6 @@ async function runAWSSetupProcess(
     const finalTelegramUserId = telegramUserId || process.env.TELEGRAM_USER_ID
 
     if (finalTelegramToken) {
-      console.log('Configuring Clawdbot with Telegram...')
       const telegramSuccess = await awsVMSetup.setupClawdbotTelegram({
         claudeApiKey,
         telegramBotToken: finalTelegramToken,
@@ -612,7 +579,6 @@ async function runAWSSetupProcess(
       await updateStatus({ telegramConfigured: telegramSuccess })
 
       if (telegramSuccess) {
-        console.log('Starting Clawdbot gateway...')
         const gatewaySuccess = await awsVMSetup.startClawdbotGateway(claudeApiKey, finalTelegramToken)
         await updateStatus({ gatewayStarted: gatewaySuccess })
       }
@@ -622,17 +588,15 @@ async function runAWSSetupProcess(
 
     // Setup complete!
     await updateStatus({ status: 'ready' })
-    console.log('AWS EC2 setup complete!')
 
   } catch (error: any) {
-    console.error('AWS setup process error:', error)
-    
+
     // Check for Free Tier restriction error
     const errorMessage = error?.message || error?.Error?.Message || String(error)
-    const isFreeTierError = errorMessage.includes('not eligible for Free Tier') || 
-                           errorMessage.includes('Free Tier') ||
-                           (error?.Code === 'InvalidParameterCombination' && errorMessage.includes('Free Tier'))
-    
+    const isFreeTierError = errorMessage.includes('not eligible for Free Tier') ||
+      errorMessage.includes('Free Tier') ||
+      (error?.Code === 'InvalidParameterCombination' && errorMessage.includes('Free Tier'))
+
     if (isFreeTierError) {
       // This is a billing/payment issue, not a technical error
       await updateStatus({
@@ -680,7 +644,7 @@ async function runE2BSetupProcess(
       where: { userId },
       data: updates,
     })
-    
+
     // Also update VM model if vmId is provided
     if (vmId) {
       const vmUpdates: Record<string, unknown> = {}
@@ -690,7 +654,7 @@ async function runE2BSetupProcess(
       if (updates.telegramConfigured !== undefined) vmUpdates.telegramConfigured = updates.telegramConfigured
       if (updates.gatewayStarted !== undefined) vmUpdates.gatewayStarted = updates.gatewayStarted
       if (updates.errorMessage !== undefined) vmUpdates.errorMessage = updates.errorMessage
-      
+
       if (Object.keys(vmUpdates).length > 0) {
         await prisma.vM.update({
           where: { id: vmId },
@@ -712,7 +676,6 @@ async function runE2BSetupProcess(
     const e2bClient = new E2BClient(e2bApiKey)
 
     // 1. Create E2B Sandbox
-    console.log(`Creating E2B sandbox with template: ${templateId}...`)
     await updateStatus({ status: 'provisioning', vmStatus: 'creating' })
 
     const sandboxName = generateSandboxName()
@@ -736,27 +699,22 @@ async function runE2BSetupProcess(
       vmStatus: 'running',
     })
 
-    console.log(`E2B sandbox ${sandboxId} is running`)
-
     // 2. Configure sandbox
-    console.log('Configuring E2B sandbox...')
     await updateStatus({ status: 'configuring_vm' })
 
     const e2bVMSetup = new E2BVMSetup(
       e2bClient,
       sandbox,
       sandboxId,
-      (progress) => {
-        console.log(`[E2B Setup] ${progress.step}: ${progress.message}`)
+      () => {
+        // Progress callback
       }
     )
 
     // Install essentials (E2B comes with Python pre-installed)
-    console.log('Installing essential tools...')
     await e2bVMSetup.installEssentials()
 
     // Install Clawdbot
-    console.log('Installing Clawdbot...')
     const clawdbotResult = await e2bVMSetup.installClawdbot()
     if (!clawdbotResult.success) {
       throw new Error('Failed to install Clawdbot')
@@ -768,7 +726,6 @@ async function runE2BSetupProcess(
     const finalTelegramUserId = telegramUserId || process.env.TELEGRAM_USER_ID
 
     if (finalTelegramToken) {
-      console.log('Configuring Clawdbot with Telegram...')
       const telegramSuccess = await e2bVMSetup.setupClawdbotTelegram({
         claudeApiKey,
         telegramBotToken: finalTelegramToken,
@@ -781,7 +738,6 @@ async function runE2BSetupProcess(
       await updateStatus({ telegramConfigured: telegramSuccess })
 
       if (telegramSuccess) {
-        console.log('Starting Clawdbot gateway...')
         const gatewaySuccess = await e2bVMSetup.startClawdbotGateway(claudeApiKey, finalTelegramToken)
         await updateStatus({ gatewayStarted: gatewaySuccess })
       }
@@ -791,10 +747,8 @@ async function runE2BSetupProcess(
 
     // Setup complete!
     await updateStatus({ status: 'ready' })
-    console.log('E2B sandbox setup complete!')
 
   } catch (error) {
-    console.error('E2B setup process error:', error)
     await updateStatus({
       status: 'failed',
       errorMessage: error instanceof Error ? error.message : 'Unknown error occurred',
@@ -806,7 +760,7 @@ async function runE2BSetupProcess(
         const e2bClient = new E2BClient(e2bApiKey)
         await e2bClient.killSandbox(sandbox)
       } catch (cleanupError) {
-        console.error('Failed to clean up sandbox:', cleanupError)
+        // Failed to clean up sandbox
       }
     }
   }

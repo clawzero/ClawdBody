@@ -100,7 +100,6 @@ export async function POST(request: NextRequest) {
     }
 
   } catch (error) {
-    console.error('E2B terminal execute error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to execute command' },
       { status: 500 }

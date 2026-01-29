@@ -50,7 +50,6 @@ export async function GET() {
       },
     })
   } catch (error) {
-    console.error('List VMs error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to list VMs' },
       { status: 500 }
@@ -128,9 +127,7 @@ export async function POST(request: NextRequest) {
         orgoComputerUrl = computer.url
         vmStatus = 'running'
         
-        console.log(`Orgo computer created: ${computer.id} at ${computer.url}`)
       } catch (orgoError: any) {
-        console.error('Orgo provisioning error:', orgoError)
         
         // Parse the error response from Orgo
         let errorMessage = orgoError.message || 'Failed to provision VM'
@@ -176,7 +173,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, vm })
   } catch (error) {
-    console.error('Create VM error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to create VM' },
       { status: 500 }

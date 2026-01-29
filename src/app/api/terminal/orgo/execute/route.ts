@@ -92,7 +92,6 @@ ${command}
     })
 
   } catch (error) {
-    console.error('Orgo terminal execute error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to execute command' },
       { status: 500 }

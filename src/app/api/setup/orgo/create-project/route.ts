@@ -73,7 +73,6 @@ export async function POST(request: NextRequest) {
       })
     } catch (createErr: any) {
       // If explicit creation fails, store the name and create during VM provisioning
-      console.warn(`Could not create project explicitly: ${createErr.message}`)
       
       await prisma.setupState.update({
         where: { userId: session.user.id },
@@ -91,7 +90,6 @@ export async function POST(request: NextRequest) {
     }
 
   } catch (error) {
-    console.error('Create project error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to create project' },
       { status: 500 }
