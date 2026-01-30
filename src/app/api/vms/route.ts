@@ -9,6 +9,7 @@ import { decrypt, encrypt } from '@/lib/encryption'
 
 /**
  * GET /api/vms - List all VMs for the current user
+ * Also validates that Orgo computers still exist and cleans up deleted ones
  */
 export async function GET() {
   try {
@@ -35,12 +36,70 @@ export async function GET() {
       },
     })
 
-    // Return all VMs without auto-deleting
-    // Note: We no longer auto-delete VMs based on Orgo API responses because:
-    // 1. Newly created VMs might return 404 briefly while being provisioned
-    // 2. Orgo API could be temporarily unavailable
-    // 3. Users should manually delete VMs they no longer need
-    const validVMs = vms
+    // Validate Orgo VMs still exist and clean up deleted ones
+    const deletedVMIds: string[] = []
+
+    // Only validate if we have an Orgo API key
+    const orgoApiKey = setupState?.orgoApiKey ? decrypt(setupState.orgoApiKey) : null
+    const orgoClient = orgoApiKey ? new OrgoClient(orgoApiKey) : null
+
+    // Grace period: don't validate VMs created in the last 5 minutes
+    // This prevents deleting VMs that are still being provisioned by Orgo
+    const GRACE_PERIOD_MS = 5 * 60 * 1000 // 5 minutes
+    const now = Date.now()
+
+    // Validate Orgo VMs in parallel for better performance
+    const validationResults = await Promise.all(
+      vms.map(async (vm) => {
+        // For Orgo VMs that have been created, verify they still exist
+        if (vm.provider === 'orgo' && vm.orgoComputerId && vm.vmCreated && orgoClient) {
+          // Skip validation for recently created VMs (within grace period)
+          const vmAge = now - new Date(vm.createdAt).getTime()
+          if (vmAge < GRACE_PERIOD_MS) {
+            return { vm, valid: true }
+          }
+
+          try {
+            await orgoClient.getComputer(vm.orgoComputerId)
+            // Computer exists, keep it
+            return { vm, valid: true }
+          } catch (error: any) {
+            const errorMessage = error?.message || ''
+            // If 404 or "not found", the computer was deleted externally
+            if (errorMessage.includes('404') || errorMessage.toLowerCase().includes('not found') || errorMessage.toLowerCase().includes('desktop not found')) {
+              console.log(`[VMs] Orgo computer ${vm.orgoComputerId} no longer exists, marking for deletion`)
+              return { vm, valid: false, deleted: true }
+            } else {
+              // Other errors (network issues, etc.) - keep the VM to be safe
+              console.log(`[VMs] Error checking Orgo computer ${vm.orgoComputerId}: ${errorMessage}, keeping VM`)
+              return { vm, valid: true }
+            }
+          }
+        }
+        // Non-Orgo VMs or Orgo VMs not yet created - keep them
+        return { vm, valid: true }
+      })
+    )
+
+    // Separate valid VMs from deleted ones
+    const validVMs = validationResults
+      .filter((result) => result.valid)
+      .map((result) => result.vm)
+    
+    validationResults
+      .filter((result) => result.deleted)
+      .forEach((result) => deletedVMIds.push(result.vm.id))
+
+    // Delete VMs that no longer exist in Orgo (in background, don't wait)
+    if (deletedVMIds.length > 0) {
+      prisma.vM.deleteMany({
+        where: { id: { in: deletedVMIds } }
+      }).then(() => {
+        console.log(`[VMs] Cleaned up ${deletedVMIds.length} deleted Orgo VMs`)
+      }).catch((err) => {
+        console.error(`[VMs] Failed to clean up deleted VMs:`, err)
+      })
+    }
 
     return NextResponse.json({
       vms: validVMs,

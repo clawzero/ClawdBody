@@ -632,6 +632,24 @@ function LearningSourcesContent() {
           transition={{ duration: 0.6, delay: 0.1 }}
           className="mb-12"
         >
+          {/* Orgo-specific notice - always shown */}
+          {(setupStatus?.vmProvider === 'orgo' || currentVM?.provider === 'orgo') && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="mb-6 p-6 rounded-2xl border border-orange-400/50 bg-orange-400/5 backdrop-blur"
+            >
+              <p className="text-sm text-orange-300 font-body leading-relaxed">
+                There are currently some issues provisioning Orgo VMs. For now, please use a{' '}
+                <Link href="/select-vm" className="text-orange-200 hover:text-orange-100 underline font-medium">
+                  different service provider
+                </Link>
+                .
+              </p>
+            </motion.div>
+          )}
+
           {isLoadingStatus ? (
             <div className="p-8 rounded-2xl border border-sam-border bg-sam-surface/50 backdrop-blur flex items-center justify-center min-h-[200px]">
               <div className="flex flex-col items-center gap-3">
@@ -640,16 +658,18 @@ function LearningSourcesContent() {
               </div>
             </div>
           ) : showSetupProgress ? (
-            <SetupProgressView
-              setupStatus={setupStatus}
-              logs={setupLogs}
-              vmId={vmId}
-              onReset={() => {
-                setShowSetupProgress(false)
-                setSetupStatus(null)
-                setSetupLogs([])
-              }}
-            />
+            <>
+              <SetupProgressView
+                setupStatus={setupStatus}
+                logs={setupLogs}
+                vmId={vmId}
+                onReset={() => {
+                  setShowSetupProgress(false)
+                  setSetupStatus(null)
+                  setSetupLogs([])
+                }}
+              />
+            </>
           ) : setupStatus?.status === 'ready' && (setupStatus?.orgoComputerId || setupStatus?.awsInstanceId || setupStatus?.e2bSandboxId || setupStatus?.isE2B || setupStatus?.vmCreated) ? (
             <ComputerConnectedView
               setupStatus={setupStatus}
