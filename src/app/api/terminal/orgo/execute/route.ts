@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { findSetupStateDecrypted } from '@/lib/prisma-encrypted'
 import { OrgoClient } from '@/lib/orgo'
 
 export async function POST(request: NextRequest) {
@@ -59,10 +60,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get API key from setup state
-    const setupState = await prisma.setupState.findUnique({
-      where: { userId: session.user.id },
-    })
+    // Get API key from setup state (decrypted)
+    const setupState = await findSetupStateDecrypted({ userId: session.user.id })
 
     orgoApiKey = setupState?.orgoApiKey || null
 
