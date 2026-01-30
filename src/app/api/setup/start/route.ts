@@ -403,9 +403,22 @@ async function runSetupProcess(
     })
 
     // Install Python and essential tools
+    console.log(`[Setup ${vmId || userId}] Starting Python installation on VM...`)
     const pythonSuccess = await vmSetup.installPython()
+    console.log(`[Setup ${vmId || userId}] Python installation result: ${pythonSuccess}`)
     if (!pythonSuccess) {
-      throw new Error('Failed to install Python and essential tools on VM')
+      // Get more diagnostic info from the VM
+      let diagnosticInfo = ''
+      try {
+        const osResult = await orgoClient.bash(computer.id, 'cat /etc/os-release 2>/dev/null | head -3 || echo "Unknown OS"')
+        const aptResult = await orgoClient.bash(computer.id, 'apt-get --version 2>&1 | head -1 || echo "apt not found"')
+        const pythonResult = await orgoClient.bash(computer.id, 'python3 --version 2>&1 || echo "python3 not found"')
+        diagnosticInfo = `OS: ${osResult.output?.trim() || 'unknown'}, apt: ${aptResult.output?.trim() || 'unknown'}, python: ${pythonResult.output?.trim() || 'unknown'}`
+        console.log(`[Setup ${vmId || userId}] VM diagnostics: ${diagnosticInfo}`)
+      } catch (diagErr) {
+        console.log(`[Setup ${vmId || userId}] Failed to get VM diagnostics: ${diagErr}`)
+      }
+      throw new Error(`Failed to install Python and essential tools on VM. Diagnostics: ${diagnosticInfo}`)
     }
 
     // Install Orgo and Anthropic Python SDKs for computer use

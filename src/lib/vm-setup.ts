@@ -256,13 +256,17 @@ export class VMSetup {
    * Wait for VM to be ready by testing a simple command
    */
   private async waitForVMReady(maxRetries: number = 10, delayMs: number = 3000): Promise<boolean> {
+    console.log(`[VMSetup ${this.computerId}] waitForVMReady: starting (maxRetries=${maxRetries}, delayMs=${delayMs})`)
     for (let i = 0; i < maxRetries; i++) {
       try {
         const result = await this.orgo.bash(this.computerId, 'echo "ready"')
+        console.log(`[VMSetup ${this.computerId}] waitForVMReady: attempt ${i + 1}/${maxRetries} - exit_code=${result.exit_code}, output=${result.output?.trim()}`)
         if (result.exit_code === 0) {
+          console.log(`[VMSetup ${this.computerId}] waitForVMReady: VM is ready`)
           return true
         }
       } catch (error) {
+        console.log(`[VMSetup ${this.computerId}] waitForVMReady: attempt ${i + 1}/${maxRetries} - error: ${error instanceof Error ? error.message : String(error)}`)
         // VM not ready yet, continue waiting
       }
       
@@ -270,6 +274,7 @@ export class VMSetup {
         await new Promise(resolve => setTimeout(resolve, delayMs))
       }
     }
+    console.log(`[VMSetup ${this.computerId}] waitForVMReady: FAILED after ${maxRetries} attempts`)
     return false
   }
 
@@ -278,6 +283,7 @@ export class VMSetup {
    * This is critical for freshly provisioned VMs where background updates may be running
    */
   private async waitForAptLock(maxRetries: number = 30, delayMs: number = 10000): Promise<boolean> {
+    console.log(`[VMSetup ${this.computerId}] waitForAptLock: starting (maxRetries=${maxRetries}, delayMs=${delayMs})`)
     this.onProgress?.({
       step: 'Wait for apt',
       message: 'Waiting for package manager to be available...',
@@ -288,6 +294,7 @@ export class VMSetup {
     const whoamiResult = await this.orgo.bash(this.computerId, 'whoami')
     const isRoot = whoamiResult.output.trim() === 'root'
     const sudoPrefix = isRoot ? '' : 'sudo '
+    console.log(`[VMSetup ${this.computerId}] waitForAptLock: user=${whoamiResult.output.trim()}, isRoot=${isRoot}`)
 
     for (let i = 0; i < maxRetries; i++) {
       try {
@@ -384,9 +391,12 @@ export class VMSetup {
    * Install Python, Git, SSH and other essential tools
    */
   async installPython(): Promise<boolean> {
+    console.log(`[VMSetup ${this.computerId}] Starting installPython()`)
+    
     // Wait for VM to be ready first
     const vmReady = await this.waitForVMReady(15, 5000) // 15 retries, 5 seconds apart = up to 75 seconds
     if (!vmReady) {
+      console.log(`[VMSetup ${this.computerId}] VM not ready after waitForVMReady`)
       this.onProgress?.({
         step: 'Install Python',
         message: 'VM not ready after waiting',
@@ -394,6 +404,7 @@ export class VMSetup {
       })
       return false
     }
+    console.log(`[VMSetup ${this.computerId}] VM is ready`)
 
     // Gather VM diagnostic information
     const whoamiResult = await this.orgo.bash(this.computerId, 'whoami')
@@ -423,6 +434,7 @@ export class VMSetup {
 
     // Handle Alpine Linux (uses apk instead of apt)
     if (pkgMgrCheck.output.includes('apk')) {
+      console.log(`[VMSetup ${this.computerId}] Detected Alpine Linux, using apk`)
       this.onProgress?.({
         step: 'Install Python',
         message: 'Detected Alpine Linux, using apk...',
@@ -432,6 +444,7 @@ export class VMSetup {
         this.computerId,
         `${sudoPrefix}apk update && ${sudoPrefix}apk add python3 py3-pip git openssh curl wget`
       )
+      console.log(`[VMSetup ${this.computerId}] apk install result: exit_code=${apkResult.exit_code}, output=${apkResult.output.slice(0, 300)}`)
       if (apkResult.exit_code === 0) {
         this.onProgress?.({
           step: 'Install Python',
@@ -451,6 +464,7 @@ export class VMSetup {
 
     // For non-apt systems, try to use what's available
     if (!pkgMgrCheck.output.includes('apt-get')) {
+      console.log(`[VMSetup ${this.computerId}] Non-apt system detected: ${pkgMgrCheck.output.trim()}`)
       this.onProgress?.({
         step: 'Install Python',
         message: `Non-standard package manager detected: ${pkgMgrCheck.output.trim()}. Checking if Python exists...`,
@@ -458,7 +472,9 @@ export class VMSetup {
       })
       // Check if python3 is available anyway
       const finalCheck = await this.orgo.bash(this.computerId, 'python3 --version && git --version')
+      console.log(`[VMSetup ${this.computerId}] finalCheck result: exit_code=${finalCheck.exit_code}, output=${finalCheck.output}`)
       if (finalCheck.exit_code === 0) {
+        console.log(`[VMSetup ${this.computerId}] Tools already installed on non-apt system`)
         this.onProgress?.({
           step: 'Install Python',
           message: `Tools already available: ${finalCheck.output.trim()}`,
@@ -466,6 +482,29 @@ export class VMSetup {
         })
         return true
       }
+      
+      // Try yum/dnf for RHEL-based systems
+      if (pkgMgrCheck.output.includes('yum') || pkgMgrCheck.output.includes('dnf')) {
+        const pkgMgr = pkgMgrCheck.output.includes('dnf') ? 'dnf' : 'yum'
+        console.log(`[VMSetup ${this.computerId}] Trying ${pkgMgr} install...`)
+        const yumResult = await this.orgo.bash(
+          this.computerId,
+          `${sudoPrefix}${pkgMgr} install -y python3 python3-pip git openssh-clients curl wget`
+        )
+        console.log(`[VMSetup ${this.computerId}] ${pkgMgr} result: exit_code=${yumResult.exit_code}, output=${yumResult.output.slice(0, 300)}`)
+        if (yumResult.exit_code === 0) {
+          return true
+        }
+      }
+      
+      // No known package manager and tools not pre-installed
+      console.log(`[VMSetup ${this.computerId}] FAILED: No known package manager and tools not pre-installed`)
+      this.onProgress?.({
+        step: 'Install Python',
+        message: `Cannot install on this system (no apt/apk/yum/dnf found). Package manager check: ${pkgMgrCheck.output.trim()}`,
+        success: false,
+      })
+      return false
     }
     
     this.onProgress?.({
@@ -477,8 +516,11 @@ export class VMSetup {
     // Wait for apt-get to be unlocked (critical for fresh VMs)
     // Fresh VMs often have unattended-upgrades running which locks apt
     // Note: waitForAptLock now already runs apt-get update if successful
+    console.log(`[VMSetup ${this.computerId}] Waiting for apt lock...`)
     const aptReady = await this.waitForAptLock(30, 10000) // 30 retries, 10 seconds apart = up to 5 minutes
+    console.log(`[VMSetup ${this.computerId}] aptReady=${aptReady}`)
     if (!aptReady) {
+      console.log(`[VMSetup ${this.computerId}] FAILED: Package manager remained locked`)
       this.onProgress?.({
         step: 'Install Python',
         message: 'Package manager remained locked after waiting',
@@ -538,6 +580,7 @@ export class VMSetup {
     }
     
     if (!success) {
+      console.log(`[VMSetup ${this.computerId}] FAILED: Package install failed after 5 attempts. Last output: ${lastOutput.slice(0, 500)}`)
       this.onProgress?.({
         step: 'Install Python',
         message: `Failed after 5 attempts: ${lastOutput.slice(0, 300)}`,
@@ -547,8 +590,11 @@ export class VMSetup {
     }
 
     // Verify installation
+    console.log(`[VMSetup ${this.computerId}] Verifying installation...`)
     const verifyResult = await this.orgo.bash(this.computerId, 'python3 --version && git --version')
+    console.log(`[VMSetup ${this.computerId}] Verify result: exit_code=${verifyResult.exit_code}, output=${verifyResult.output}`)
     if (verifyResult.exit_code !== 0) {
+      console.log(`[VMSetup ${this.computerId}] FAILED: Installation verification failed`)
       this.onProgress?.({
         step: 'Install Python',
         message: `Installation verification failed: ${verifyResult.output}`,
@@ -557,6 +603,7 @@ export class VMSetup {
       return false
     }
 
+    console.log(`[VMSetup ${this.computerId}] SUCCESS: Python and tools installed`)
     this.onProgress?.({
       step: 'Install Python',
       message: `Python and essential tools installed: ${verifyResult.output.trim()}`,

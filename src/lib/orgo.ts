@@ -31,10 +31,20 @@ export class OrgoClient {
   }
 
   /**
-   * Ensure computer ID has the 'orgo-' prefix that Orgo API expects
+   * Normalize computer ID - the Orgo API expects the raw ID without prefix for most endpoints
+   * (Previously incorrectly added 'orgo-' prefix which caused "Desktop not found" errors)
    */
   private normalizeComputerId(computerId: string): string {
-    return computerId.startsWith('orgo-') ? computerId : `orgo-${computerId}`
+    // Remove 'orgo-' prefix if present (for backward compatibility with any stored IDs that have it)
+    return computerId.startsWith('orgo-') ? computerId.slice(5) : computerId
+  }
+
+  /**
+   * Format computer ID for delete endpoint - Orgo's delete API requires the 'orgo-' prefix
+   */
+  private formatComputerIdForDelete(computerId: string): string {
+    const normalized = this.normalizeComputerId(computerId)
+    return `orgo-${normalized}`
   }
 
   private async request<T>(
@@ -188,9 +198,10 @@ export class OrgoClient {
 
   /**
    * Delete a computer
+   * Note: Orgo's delete endpoint requires the 'orgo-' prefix unlike other endpoints
    */
   async deleteComputer(computerId: string): Promise<void> {
-    await this.request(`/computers/${this.normalizeComputerId(computerId)}`, { method: 'DELETE' })
+    await this.request(`/computers/${this.formatComputerIdForDelete(computerId)}`, { method: 'DELETE' })
   }
 
   /**
