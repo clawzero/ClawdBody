@@ -85,7 +85,6 @@ interface OrgoRAMOption {
 }
 
 const orgoRAMOptions: OrgoRAMOption[] = [
-  { id: 2, name: '2 GB', description: 'Light tasks', freeTier: true },
   { id: 4, name: '4 GB', description: 'Standard workloads', freeTier: true },
   { id: 8, name: '8 GB', description: 'AI & development', freeTier: false }, // Requires Pro plan
   { id: 16, name: '16 GB', description: 'Heavy workloads', freeTier: false, recommended: true }, // Requires Pro plan
@@ -95,7 +94,6 @@ const orgoRAMOptions: OrgoRAMOption[] = [
 // Auto-select CPU cores based on RAM
 const getOrgoCPUForRAM = (ram: number): number => {
   switch (ram) {
-    case 2: return 1
     case 4: return 2
     case 8: return 4
     case 16: return 4 // Could also be 8, needs testing

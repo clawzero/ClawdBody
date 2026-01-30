@@ -640,31 +640,16 @@ function LearningSourcesContent() {
               </div>
             </div>
           ) : showSetupProgress ? (
-            <>
-              {/* Orgo-specific setup time notice */}
-              {(setupStatus?.vmProvider === 'orgo' || currentVM?.provider === 'orgo') && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5 }}
-                  className="mb-6 p-6 rounded-2xl border border-blue-400/50 bg-blue-400/5 backdrop-blur"
-                >
-                  <p className="text-sm text-blue-300 font-body leading-relaxed">
-                    Feel free to grab a coffee while we set up your workspace ☕ This usually takes around 25-30 minutes.
-                  </p>
-                </motion.div>
-              )}
-              <SetupProgressView
-                setupStatus={setupStatus}
-                logs={setupLogs}
-                vmId={vmId}
-                onReset={() => {
-                  setShowSetupProgress(false)
-                  setSetupStatus(null)
-                  setSetupLogs([])
-                }}
-              />
-            </>
+            <SetupProgressView
+              setupStatus={setupStatus}
+              logs={setupLogs}
+              vmId={vmId}
+              onReset={() => {
+                setShowSetupProgress(false)
+                setSetupStatus(null)
+                setSetupLogs([])
+              }}
+            />
           ) : setupStatus?.status === 'ready' && (setupStatus?.orgoComputerId || setupStatus?.awsInstanceId || setupStatus?.e2bSandboxId || setupStatus?.isE2B || setupStatus?.vmCreated) ? (
             <ComputerConnectedView
               setupStatus={setupStatus}
