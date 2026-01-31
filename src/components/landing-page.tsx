@@ -91,7 +91,7 @@ export function LandingPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2, duration: 0.6 }}
           >
-            1-Click ClawdBot deployment on VMs that runs 24/7 automating your life and business.
+            1-click AI workflow deployment on cloud VMs
           </motion.h1>
 
           <motion.p
@@ -100,7 +100,7 @@ export function LandingPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3, duration: 0.6 }}
           >
-            Persistent memory. Sandboxed cloud VM. Works while you sleep.
+            Persistent memory. Safe personal data. Works while you sleep.
           </motion.p>
 
           <motion.div
