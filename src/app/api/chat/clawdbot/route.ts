@@ -104,7 +104,7 @@ export ANTHROPIC_API_KEY="${claudeApiKey}"
 ${clawdbotCommand}
 `.trim()
 
-    let result: { output: string; exitCode?: number }
+    let result: { output: string; exitCode?: number } | null = null
 
     if (vmProvider === 'orgo') {
       // Execute via Orgo API
@@ -120,8 +120,84 @@ ${clawdbotCommand}
       }
 
       const client = new OrgoClient(orgoApiKey)
-      const orgoResult = await client.bash(computerId, wrappedCommand, 300000) // 5 min timeout
-      result = { output: orgoResult.output || '', exitCode: orgoResult.exit_code }
+      
+      // Use background execution to work around Orgo's 30-second timeout on older computers
+      // This runs the command in background and polls for results
+      const jobId = `clawdbot_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      const outputFile = `/tmp/${jobId}.out`
+      const doneFile = `/tmp/${jobId}.done`
+      const pidFile = `/tmp/${jobId}.pid`
+      
+      // Create a script that runs the command and signals completion
+      const bgScript = `
+cat > /tmp/${jobId}.sh << 'SCRIPT_EOF'
+#!/bin/bash
+source ~/.bashrc 2>/dev/null || true
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+export ANTHROPIC_API_KEY="${claudeApiKey}"
+${clawdbotCommand} > ${outputFile} 2>&1
+echo $? > ${doneFile}
+SCRIPT_EOF
+chmod +x /tmp/${jobId}.sh
+nohup /tmp/${jobId}.sh > /dev/null 2>&1 &
+echo $! > ${pidFile}
+cat ${pidFile}
+`.trim()
+
+      try {
+        // Start the background job (this should complete quickly)
+        const startResult = await client.bash(computerId, bgScript, 25000, 20)
+        const pid = startResult.output?.trim()
+        
+        if (!pid) {
+          throw new Error('Failed to start background job')
+        }
+        
+        // Poll for completion (up to 3 minutes, checking every 10 seconds)
+        // 10 seconds is reasonable - responsive but not excessive API calls
+        const maxPolls = 18
+        const pollInterval = 10000
+        
+        for (let i = 0; i < maxPolls; i++) {
+          await new Promise(resolve => setTimeout(resolve, pollInterval))
+          
+          // Check if done file exists
+          const checkCmd = `if [ -f ${doneFile} ]; then echo "DONE"; cat ${outputFile} 2>/dev/null; else echo "RUNNING"; fi`
+          const checkResult = await client.bash(computerId, checkCmd, 25000, 20)
+          const checkOutput = checkResult.output || ''
+          
+          if (checkOutput.startsWith('DONE')) {
+            // Command completed - extract output (everything after "DONE\n")
+            const output = checkOutput.slice(5).trim()
+            
+            // Cleanup temp files
+            client.bash(computerId, `rm -f /tmp/${jobId}.sh ${outputFile} ${doneFile} ${pidFile}`, 10000, 10).catch(() => {})
+            
+            result = { output, exitCode: 0 }
+            break
+          }
+          
+          // Still running, continue polling
+          if (i === maxPolls - 1) {
+            // Timeout - kill the process and cleanup
+            client.bash(computerId, `kill $(cat ${pidFile} 2>/dev/null) 2>/dev/null; rm -f /tmp/${jobId}.sh ${outputFile} ${doneFile} ${pidFile}`, 10000, 10).catch(() => {})
+            
+            return NextResponse.json({
+              error: 'The AI is taking too long to respond. Please try a simpler question or try again later.',
+            }, { status: 504 })
+          }
+        }
+        
+      } catch (orgoError: any) {
+        const errorMsg = orgoError?.message || ''
+        console.error('Orgo chat error:', errorMsg)
+        
+        // Cleanup on error
+        client.bash(computerId, `rm -f /tmp/${jobId}.sh ${outputFile} ${doneFile} ${pidFile}`, 10000, 10).catch(() => {})
+        
+        throw orgoError
+      }
 
     } else if (vmProvider === 'aws') {
       // Execute via SSH on AWS
@@ -184,6 +260,11 @@ ${clawdbotCommand}
 
     } else {
       return NextResponse.json({ error: `Unsupported VM provider: ${vmProvider}` }, { status: 400 })
+    }
+
+    // Ensure we have a result
+    if (!result) {
+      return NextResponse.json({ error: 'Failed to execute command' }, { status: 500 })
     }
 
     // Parse the response - Clawdbot typically outputs the response directly

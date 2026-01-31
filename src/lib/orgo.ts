@@ -209,13 +209,22 @@ export class OrgoClient {
    * @param computerId - The computer ID
    * @param command - The bash command to execute
    * @param timeoutMs - Optional timeout in milliseconds (default: 300000 = 5 minutes for long-running commands)
+   * @param serverTimeoutSec - Optional server-side timeout in seconds (passed to Orgo API, default: 200)
    */
-  async bash(computerId: string, command: string, timeoutMs: number = 300000): Promise<{ output: string; exit_code: number }> {
+  async bash(
+    computerId: string, 
+    command: string, 
+    timeoutMs: number = 300000,
+    serverTimeoutSec: number = 200
+  ): Promise<{ output: string; exit_code: number }> {
     return this.request(
       `/computers/${this.normalizeComputerId(computerId)}/bash`,
       {
         method: 'POST',
-        body: JSON.stringify({ command }),
+        body: JSON.stringify({ 
+          command,
+          timeout: serverTimeoutSec, // Request server-side timeout (Orgo API parameter)
+        }),
       },
       timeoutMs
     )
