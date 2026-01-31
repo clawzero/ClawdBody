@@ -634,7 +634,7 @@ function LearningSourcesContent() {
           className="mb-12"
         >
           {/* Orgo-specific notice - always shown */}
-          {(setupStatus?.vmProvider === 'orgo' || currentVM?.provider === 'orgo') && (
+          {/* {(setupStatus?.vmProvider === 'orgo' || currentVM?.provider === 'orgo') && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -649,7 +649,7 @@ function LearningSourcesContent() {
                 .
               </p>
             </motion.div>
-          )}
+          )} */}
 
           {isLoadingStatus ? (
             <div className="p-8 rounded-2xl border border-sam-border bg-sam-surface/50 backdrop-blur flex items-center justify-center min-h-[200px]">
