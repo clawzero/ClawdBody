@@ -6,6 +6,7 @@ import { OrgoClient, sanitizeName } from '@/lib/orgo'
 import { decrypt } from '@/lib/encryption'
 import {
   getTemplateById,
+  convertDbTemplate,
   processCommands,
   processTemplateObject,
   extractJsonPath,
@@ -69,8 +70,20 @@ export async function POST(request: NextRequest): Promise<NextResponse<DeployRes
       )
     }
 
-    // Get template
-    const template = getTemplateById(templateId)
+    // Get template - first check built-in templates, then database
+    let template: Template | undefined = getTemplateById(templateId)
+    
+    if (!template) {
+      // Check database for user-created templates
+      const dbTemplate = await prisma.marketplaceTemplate.findFirst({
+        where: { templateId },
+      })
+      
+      if (dbTemplate) {
+        template = convertDbTemplate(dbTemplate)
+      }
+    }
+    
     if (!template) {
       return NextResponse.json(
         { success: false, error: `Template "${templateId}" not found` },

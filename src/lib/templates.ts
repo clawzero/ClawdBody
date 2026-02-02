@@ -46,8 +46,10 @@ export interface Template {
   logo: string                    // URL or /public path
   category: TemplateCategory
   author?: string                 // For user-uploaded templates
+  authorId?: string               // User ID of template creator (null for built-in)
   websiteUrl?: string             // Link to service website
   comingSoon?: boolean            // Mark template as coming soon (not deployable)
+  isUserCreated?: boolean         // Mark as user-created template
   
   vmConfig: TemplateVMConfig
   
@@ -59,6 +61,67 @@ export interface Template {
   credentials?: TemplateCredentials
   postSetup?: TemplatePostSetup
 }
+
+// ==================== Template Ideas ====================
+// Suggestions for users creating new templates
+
+export interface TemplateIdea {
+  name: string
+  description: string
+  category: TemplateCategory
+  icon: string  // emoji
+}
+
+export const TEMPLATE_IDEAS: TemplateIdea[] = [
+  {
+    name: 'Personal Assistant',
+    description: 'An AI that manages your calendar, emails, and daily tasks',
+    category: 'productivity',
+    icon: '🤖'
+  },
+  {
+    name: 'Stock & Crypto Trader',
+    description: 'Monitor markets and execute trades based on your strategy',
+    category: 'other',
+    icon: '📈'
+  },
+  {
+    name: 'Code Reviewer',
+    description: 'Automatically review pull requests and suggest improvements',
+    category: 'dev-tools',
+    icon: '🔍'
+  },
+  {
+    name: 'Social Media Manager',
+    description: 'Schedule posts and engage with your audience across platforms',
+    category: 'social',
+    icon: '📱'
+  },
+  {
+    name: 'Research Assistant',
+    description: 'Gather information, summarize papers, and compile reports',
+    category: 'productivity',
+    icon: '📚'
+  },
+  {
+    name: 'Customer Support Agent',
+    description: 'Handle support tickets and answer common questions',
+    category: 'productivity',
+    icon: '💬'
+  },
+  {
+    name: 'Content Writer',
+    description: 'Generate blog posts, articles, and marketing copy',
+    category: 'productivity',
+    icon: '✍️'
+  },
+  {
+    name: 'DevOps Monitor',
+    description: 'Watch your infrastructure and alert on issues',
+    category: 'dev-tools',
+    icon: '🖥️'
+  },
+]
 
 // ==================== Helper Functions ====================
 
@@ -126,7 +189,7 @@ export function extractJsonPath(obj: any, path: string): any {
 export function generateAgentName(templateName: string): string {
   const base = templateName.replace(/[^a-zA-Z0-9]/g, '')
   const suffix = Math.random().toString(36).substring(2, 6).toUpperCase()
-  return `${base}Agent_${suffix}`
+  return base + 'Agent_' + suffix
 }
 
 /**
@@ -141,6 +204,39 @@ export function getTemplateById(id: string): Template | undefined {
  */
 export function getAllTemplates(): Template[] {
   return [...BUILTIN_TEMPLATES]
+}
+
+/**
+ * Generate a URL-safe template ID from a name
+ */
+export function generateTemplateId(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .substring(0, 50) + '-' + Math.random().toString(36).substring(2, 6)
+}
+
+/**
+ * Convert a database template to the Template interface
+ */
+export function convertDbTemplate(dbTemplate: any): Template {
+  return {
+    id: dbTemplate.templateId,
+    name: dbTemplate.name,
+    description: dbTemplate.description,
+    logo: dbTemplate.logo || '/logos/orgo.png',
+    category: dbTemplate.category as TemplateCategory,
+    author: dbTemplate.authorName || 'Community',
+    authorId: dbTemplate.authorId,
+    websiteUrl: dbTemplate.websiteUrl,
+    isUserCreated: true,
+    vmConfig: JSON.parse(dbTemplate.vmConfig),
+    setup: JSON.parse(dbTemplate.setup),
+    registration: dbTemplate.registration ? JSON.parse(dbTemplate.registration) : undefined,
+    credentials: dbTemplate.credentials ? JSON.parse(dbTemplate.credentials) : undefined,
+    postSetup: dbTemplate.postSetup ? JSON.parse(dbTemplate.postSetup) : undefined,
+  }
 }
 
 // ==================== Built-in Templates ====================
@@ -179,7 +275,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
         'curl -s https://www.moltbook.com/skill.json > ~/.openclaw/skills/moltbook/package.json',
         
         // Save credentials (apiKey and agentName are injected after registration)
-        'echo \'{{credentialsJson}}\' > ~/.config/moltbook/credentials.json',
+        "echo '{{credentialsJson}}' > ~/.config/moltbook/credentials.json",
         'chmod 600 ~/.config/moltbook/credentials.json',
         
         // Stage heartbeat additions (setup will append these to HEARTBEAT.md)
@@ -222,59 +318,6 @@ export const BUILTIN_TEMPLATES: Template[] = [
       message: 'To activate your agent, you need to verify ownership by posting a tweet. Click the button below to open the claim page.'
     }
   },
-  
-  // Placeholder templates for marketplace UI (coming soon)
-  // These show the extensibility of the system
-  
-  {
-    id: 'stock-crypto-trader',
-    name: 'Stock & Crypto Trader',
-    description: 'Deploy an AI agent that monitors markets, analyzes trends, and executes trades for stocks and cryptocurrencies on your behalf.',
-    logo: '/logos/robinhood.png',
-    category: 'other',
-    author: 'OpenClaw',
-    websiteUrl: 'https://openclaw.ai',
-    comingSoon: true,
-    
-    vmConfig: {
-      provider: 'orgo',
-      minRam: 4,
-      recommendedRam: 8
-    },
-    
-    setup: {
-      commands: [
-        // Create staging directories
-        'mkdir -p ~/.openclaw/skills/stock-crypto-trader ~/.openclaw/heartbeat-additions ~/.config/stock-crypto-trader',
-        
-        // Save credentials (will be injected after registration)
-        'echo \'{{credentialsJson}}\' > ~/.config/stock-crypto-trader/credentials.json',
-        'chmod 600 ~/.config/stock-crypto-trader/credentials.json',
-        
-        // Stage heartbeat additions
-        'echo "## Stock & Crypto Trader\\n- Monitor market conditions and portfolio performance\\n- Execute trades based on configured strategy and risk parameters" > ~/.openclaw/heartbeat-additions/stock-crypto-trader.md',
-        
-        // If workspace already exists, copy skills there now
-        'if [ -d ~/clawd ]; then mkdir -p ~/clawd/skills && cp -r ~/.openclaw/skills/* ~/clawd/skills/ 2>/dev/null || true; fi',
-        
-        // If HEARTBEAT.md already exists, append our additions now
-        'if [ -f ~/clawd/HEARTBEAT.md ]; then echo "" >> ~/clawd/HEARTBEAT.md && cat ~/.openclaw/heartbeat-additions/stock-crypto-trader.md >> ~/clawd/HEARTBEAT.md; fi',
-      ]
-    },
-    
-    credentials: {
-      path: '~/.config/stock-crypto-trader/credentials.json',
-      template: {
-        api_key: '{{apiKey}}',
-        agent_name: '{{agentName}}'
-      }
-    },
-    
-    postSetup: {
-      type: 'none',
-      message: 'Your Stock & Crypto Trader agent is ready. Configure your trading preferences and API keys for your preferred exchanges.'
-    }
-  },
 ]
 
 // ==================== Template Validation ====================
@@ -311,4 +354,35 @@ export function validateTemplate(template: Partial<Template>): { valid: boolean;
     valid: errors.length === 0,
     errors
   }
+}
+
+/**
+ * Generate template setup commands from natural language description
+ * This is a helper that AI can use to generate appropriate shell commands
+ */
+export function generateSetupCommandsFromDescription(
+  templateName: string,
+  description: string
+): string[] {
+  // Basic structure for any template
+  const templateId = templateName.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  
+  const skillContent = '# ' + templateName + '\n\n' + description + '\n\n## Instructions\n- Follow user instructions to complete tasks\n- Report progress and any issues encountered'
+  
+  return [
+    // Create staging directories
+    'mkdir -p ~/.openclaw/skills/' + templateId + ' ~/.openclaw/heartbeat-additions ~/.config/' + templateId,
+    
+    // Create basic skill file  
+    "cat > ~/.openclaw/skills/" + templateId + "/SKILL.md << 'SKILLEOF'\n" + skillContent + "\nSKILLEOF",
+    
+    // Create heartbeat entry
+    'echo "## ' + templateName + '\\n- Check for new tasks and notifications\\n- Execute pending operations as configured" > ~/.openclaw/heartbeat-additions/' + templateId + '.md',
+    
+    // Copy to workspace if it exists
+    'if [ -d ~/clawd ]; then mkdir -p ~/clawd/skills/' + templateId + ' && cp -r ~/.openclaw/skills/' + templateId + '/* ~/clawd/skills/' + templateId + '/ 2>/dev/null || true; fi',
+    
+    // Append to HEARTBEAT.md if it exists
+    'if [ -f ~/clawd/HEARTBEAT.md ] && ! grep -q "## ' + templateName + '" ~/clawd/HEARTBEAT.md; then echo "" >> ~/clawd/HEARTBEAT.md && cat ~/.openclaw/heartbeat-additions/' + templateId + '.md >> ~/clawd/HEARTBEAT.md; fi',
+  ]
 }

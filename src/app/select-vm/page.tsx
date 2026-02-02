@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2, ArrowRight, CheckCircle2, LogOut, X, Key, FolderPlus, AlertCircle, ExternalLink, Globe, Server, Plus, Trash2, Play, Power, ArrowLeft, ExternalLinkIcon, Settings, Rocket, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
-import type { Template } from '@/lib/templates'
+import { Loader2, ArrowRight, CheckCircle2, LogOut, X, Key, FolderPlus, AlertCircle, ExternalLink, Globe, Server, Plus, Trash2, Play, Power, ArrowLeft, ExternalLinkIcon, Settings, Rocket, ChevronDown, ChevronUp, Sparkles, PenTool, User, Lightbulb } from 'lucide-react'
+import type { Template, TemplateIdea } from '@/lib/templates'
+import { TEMPLATE_IDEAS } from '@/lib/templates'
 
 type VMProvider = 'orgo' | 'e2b' | 'moltworker' | 'flyio' | 'aws' | 'railway' | 'digitalocean' | 'hetzner' | 'modal'
 
@@ -271,6 +272,16 @@ export default function SelectVMPage() {
     verificationCode?: string
   } | null>(null)
 
+  // Create Template modal state
+  const [showCreateTemplateModal, setShowCreateTemplateModal] = useState(false)
+  const [newTemplateName, setNewTemplateName] = useState('')
+  const [newTemplateDescription, setNewTemplateDescription] = useState('')
+  const [newTemplatePrompt, setNewTemplatePrompt] = useState('')
+  const [isCreatingTemplate, setIsCreatingTemplate] = useState(false)
+  const [createTemplateError, setCreateTemplateError] = useState<string | null>(null)
+  const [templateIdeas] = useState<TemplateIdea[]>(TEMPLATE_IDEAS)
+  const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null)
+
   // Load user's VMs, credentials, and templates
   useEffect(() => {
     if (session?.user?.id) {
@@ -310,12 +321,6 @@ export default function SelectVMPage() {
   }
 
   const handleTemplateClick = async (template: Template) => {
-    // Check if Orgo is configured (templates use Orgo VMs)
-    if (!credentials?.hasOrgoApiKey) {
-      setError('Please configure your Orgo API key first before deploying templates. Click on "Orgo" below to add your API key.')
-      return
-    }
-    
     setSelectedTemplate(template)
     setTemplateAgentName(generateDefaultAgentName(template.name))
     setSelectedTemplateRAM(template.vmConfig.recommendedRam)
@@ -323,14 +328,21 @@ export default function SelectVMPage() {
     setSelectedTemplateProject(orgoProjects[0] || null) // Set default project
     setShowTemplateDeployModal(true)
     
-    // Fetch Orgo projects if not already loaded
-    if (orgoProjects.length === 0) {
-      setIsLoadingProjectsForTemplate(true)
-      try {
-        await fetchOrgoProjects()
-      } finally {
-        setIsLoadingProjectsForTemplate(false)
+    // If we already have Orgo API key stored, fetch projects
+    if (credentials?.hasOrgoApiKey) {
+      setKeyValidated(true)
+      if (orgoProjects.length === 0) {
+        setIsLoadingProjectsForTemplate(true)
+        try {
+          await fetchOrgoProjects()
+        } finally {
+          setIsLoadingProjectsForTemplate(false)
+        }
       }
+    } else {
+      // Reset key validation state for fresh input
+      setKeyValidated(false)
+      setOrgoApiKey('')
     }
   }
 
@@ -414,12 +426,107 @@ export default function SelectVMPage() {
     setTemplateError(null)
     setDeploymentProgress(null)
     setSelectedTemplateProject(null)
+    // Reset API key state only if not already saved
+    if (!credentials?.hasOrgoApiKey) {
+      setKeyValidated(false)
+      setOrgoApiKey('')
+    }
   }
 
   const closeTemplateSuccessModal = () => {
     setShowTemplateSuccessModal(false)
     setDeployedVM(null)
     setPostSetupData(null)
+  }
+
+  const handleCreateTemplateClick = () => {
+    setShowCreateTemplateModal(true)
+    setNewTemplateName('')
+    setNewTemplateDescription('')
+    setNewTemplatePrompt('')
+    setCreateTemplateError(null)
+  }
+
+  const handleSelectTemplateIdea = (idea: TemplateIdea) => {
+    setNewTemplateName(idea.name)
+    setNewTemplateDescription(idea.description)
+    setNewTemplatePrompt(`Create an AI agent that ${idea.description.toLowerCase()}. It should be helpful, efficient, and easy to use.`)
+  }
+
+  const handleCreateTemplate = async () => {
+    if (!newTemplateName.trim()) {
+      setCreateTemplateError('Please enter a template name')
+      return
+    }
+    if (!newTemplateDescription.trim()) {
+      setCreateTemplateError('Please enter a description')
+      return
+    }
+
+    setIsCreatingTemplate(true)
+    setCreateTemplateError(null)
+
+    try {
+      const res = await fetch('/api/templates/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newTemplateName.trim(),
+          description: newTemplateDescription.trim(),
+          prompt: newTemplatePrompt.trim() || undefined,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to create template')
+      }
+
+      // Success - close modal and refresh templates
+      setShowCreateTemplateModal(false)
+      await loadTemplates()
+      
+    } catch (e) {
+      setCreateTemplateError(e instanceof Error ? e.message : 'Failed to create template')
+    } finally {
+      setIsCreatingTemplate(false)
+    }
+  }
+
+  const closeCreateTemplateModal = () => {
+    setShowCreateTemplateModal(false)
+    setNewTemplateName('')
+    setNewTemplateDescription('')
+    setNewTemplatePrompt('')
+    setCreateTemplateError(null)
+  }
+
+  const handleDeleteTemplate = async (e: React.MouseEvent, templateId: string) => {
+    e.stopPropagation() // Prevent opening the deploy modal
+    
+    if (!confirm('Are you sure you want to delete this template? This action cannot be undone.')) {
+      return
+    }
+
+    setDeletingTemplateId(templateId)
+    try {
+      const res = await fetch(`/api/templates/${templateId}`, {
+        method: 'DELETE',
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to delete template')
+      }
+
+      // Refresh templates list
+      await loadTemplates()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to delete template')
+    } finally {
+      setDeletingTemplateId(null)
+    }
   }
 
   useEffect(() => {
@@ -1181,18 +1288,27 @@ export default function SelectVMPage() {
                 Deploy AI agents and workflows with one click
               </p>
             </div>
-            {templates.length > 5 && (
+            <div className="flex items-center gap-3">
+              {templates.length > 5 && (
+                <button
+                  onClick={() => setShowAllTemplates(!showAllTemplates)}
+                  className="flex items-center gap-1 text-sm text-sam-accent hover:text-sam-accent/80 transition-colors"
+                >
+                  {showAllTemplates ? (
+                    <>Show less <ChevronUp className="w-4 h-4" /></>
+                  ) : (
+                    <>Show all {templates.length} <ChevronDown className="w-4 h-4" /></>
+                  )}
+                </button>
+              )}
               <button
-                onClick={() => setShowAllTemplates(!showAllTemplates)}
-                className="flex items-center gap-1 text-sm text-sam-accent hover:text-sam-accent/80 transition-colors"
+                onClick={handleCreateTemplateClick}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-sam-accent/10 border border-sam-accent/30 text-sam-accent text-sm font-medium hover:bg-sam-accent/20 hover:border-sam-accent/50 transition-all"
               >
-                {showAllTemplates ? (
-                  <>Show less <ChevronUp className="w-4 h-4" /></>
-                ) : (
-                  <>Show all {templates.length} <ChevronDown className="w-4 h-4" /></>
-                )}
+                <PenTool className="w-4 h-4" />
+                Create Your Own
               </button>
-            )}
+            </div>
           </div>
 
           {isLoadingTemplates ? (
@@ -1206,7 +1322,7 @@ export default function SelectVMPage() {
                   key={template.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: 0.05 * index }}
+                  transition={{ duration: 0.3, delay: 0.05 * (index + 1) }}
                   className={`group relative p-5 rounded-xl border border-sam-border bg-sam-surface/50 transition-all ${
                     template.comingSoon 
                       ? 'opacity-75 cursor-not-allowed' 
@@ -1214,7 +1330,6 @@ export default function SelectVMPage() {
                   }`}
                   onClick={() => !template.comingSoon && handleTemplateClick(template)}
                 >
-
                   {/* Template Logo and Info */}
                   <div className="flex items-start gap-4 mb-4">
                     <div className="w-12 h-12 rounded-xl bg-sam-bg flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -1233,9 +1348,17 @@ export default function SelectVMPage() {
                           {template.name}
                         </h3>
                       </div>
-                      <span className={`inline-block text-[10px] font-mono px-1.5 py-0.5 rounded ${categoryConfig[template.category]?.color || categoryConfig.other.color}`}>
-                        {categoryConfig[template.category]?.label || 'Other'}
-                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`inline-block text-[10px] font-mono px-1.5 py-0.5 rounded ${categoryConfig[template.category]?.color || categoryConfig.other.color}`}>
+                          {categoryConfig[template.category]?.label || 'Other'}
+                        </span>
+                        {template.author && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono text-sam-text-dim">
+                            <User className="w-2.5 h-2.5" />
+                            {template.author}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1264,6 +1387,29 @@ export default function SelectVMPage() {
                     )}
                   </div>
 
+                  {/* User-created badge and delete button */}
+                  {template.isUserCreated && (
+                    <div className="absolute top-3 right-3 flex items-center gap-2">
+                      <span className="text-[9px] font-mono text-purple-400 bg-purple-400/10 px-1.5 py-0.5 rounded">
+                        Community
+                      </span>
+                      {template.authorId === session?.user?.id && (
+                        <button
+                          onClick={(e) => handleDeleteTemplate(e, template.id)}
+                          disabled={deletingTemplateId === template.id}
+                          className="p-1 rounded hover:bg-sam-error/20 text-sam-text-dim hover:text-sam-error transition-colors disabled:opacity-50"
+                          title="Delete template"
+                        >
+                          {deletingTemplateId === template.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {/* Hover effect indicator */}
                   {!template.comingSoon && (
                     <div className="absolute inset-0 rounded-xl bg-sam-accent/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
@@ -1275,7 +1421,7 @@ export default function SelectVMPage() {
             <div className="p-8 rounded-xl border border-sam-border bg-sam-surface/30 text-center">
               <Rocket className="w-12 h-12 text-sam-text-dim mx-auto mb-3" />
               <p className="text-sam-text-dim">No templates available yet</p>
-              <p className="text-sm text-sam-text-dim/60 mt-1">Check back soon for new AI agent templates</p>
+              <p className="text-sm text-sam-text-dim/60 mt-1">Click "Create Your Own" to build your first template</p>
             </div>
           )}
         </motion.div>
@@ -2466,6 +2612,99 @@ export default function SelectVMPage() {
                   )}
                 </div>
 
+                {/* Orgo API Key Setup - only show if not configured */}
+                {!credentials?.hasOrgoApiKey && !keyValidated && (
+                  <div className="space-y-4">
+                    <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                      <div className="flex items-start gap-3">
+                        <Key className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-amber-400 font-medium text-sm">Orgo API Key Required</p>
+                          <p className="text-amber-400/80 text-xs mt-1">
+                            Templates are deployed to Orgo VMs. Enter your API key to continue.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-sam-text flex items-center gap-2">
+                          <Key className="w-4 h-4 text-sam-accent" />
+                          Orgo API Key
+                          <span className="text-sam-error">*</span>
+                        </label>
+                        <a
+                          href="https://www.orgo.ai/start"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-sam-accent hover:text-sam-accent/80 flex items-center gap-1"
+                        >
+                          Get API key <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          value={orgoApiKey}
+                          onChange={(e) => {
+                            setOrgoApiKey(e.target.value)
+                            setTemplateError(null)
+                          }}
+                          placeholder="Enter your Orgo API key"
+                          className="flex-1 px-4 py-2.5 rounded-lg bg-sam-bg border border-sam-border focus:border-sam-accent focus:ring-1 focus:ring-sam-accent/30 transition-all text-sam-text placeholder:text-sam-text-dim/50 font-mono text-sm"
+                        />
+                        <button
+                          onClick={async () => {
+                            if (!orgoApiKey.trim()) {
+                              setTemplateError('Please enter your Orgo API key')
+                              return
+                            }
+                            setIsValidatingKey(true)
+                            setTemplateError(null)
+                            try {
+                              const res = await fetch('/api/setup/orgo/validate', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ apiKey: orgoApiKey.trim() }),
+                              })
+                              const data = await res.json()
+                              if (!res.ok) {
+                                throw new Error(data.error || 'Failed to validate API key')
+                              }
+                              setKeyValidated(true)
+                              setOrgoProjects(data.projects || [])
+                              if (data.projects?.length > 0) {
+                                setSelectedTemplateProject(data.projects[0])
+                              }
+                              // Update credentials state
+                              setCredentials(prev => prev ? { ...prev, hasOrgoApiKey: true } : null)
+                            } catch (e) {
+                              setTemplateError(e instanceof Error ? e.message : 'Failed to validate API key')
+                            } finally {
+                              setIsValidatingKey(false)
+                            }
+                          }}
+                          disabled={isValidatingKey || !orgoApiKey.trim()}
+                          className="px-4 py-2.5 rounded-lg bg-sam-accent text-sam-bg font-medium text-sm hover:bg-sam-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                          {isValidatingKey ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Validating
+                            </>
+                          ) : (
+                            'Validate'
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Show rest of the form only after API key is validated */}
+                {(credentials?.hasOrgoApiKey || keyValidated) && (
+                  <>
                 {/* Agent Name Input */}
                 <div className="space-y-3">
                   <label className="text-sm font-medium text-sam-text flex items-center gap-2">
@@ -2519,8 +2758,57 @@ export default function SelectVMPage() {
                       ))}
                     </div>
                   ) : (
-                    <div className="px-4 py-3 rounded-lg bg-sam-bg border border-sam-border text-sam-text-dim text-sm">
-                      No projects found. Create one via the Orgo option in Add New VM.
+                    <div className="space-y-3">
+                      <p className="text-sm text-sam-text-dim">
+                        No projects found. Create your first project:
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newProjectName}
+                          onChange={(e) => setNewProjectName(e.target.value)}
+                          placeholder="Project name"
+                          className="flex-1 px-4 py-2.5 rounded-lg bg-sam-bg border border-sam-border focus:border-sam-accent focus:ring-1 focus:ring-sam-accent/30 transition-all text-sam-text placeholder:text-sam-text-dim/50 text-sm"
+                        />
+                        <button
+                          onClick={async () => {
+                            if (!newProjectName.trim()) {
+                              setTemplateError('Please enter a project name')
+                              return
+                            }
+                            setIsCreatingProject(true)
+                            setTemplateError(null)
+                            try {
+                              const res = await fetch('/api/setup/orgo/create-project', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ projectName: newProjectName.trim() }),
+                              })
+                              const data = await res.json()
+                              if (!res.ok) {
+                                throw new Error(data.error || 'Failed to create project')
+                              }
+                              setOrgoProjects(prev => [...prev, data.project])
+                              setSelectedTemplateProject(data.project)
+                            } catch (e) {
+                              setTemplateError(e instanceof Error ? e.message : 'Failed to create project')
+                            } finally {
+                              setIsCreatingProject(false)
+                            }
+                          }}
+                          disabled={isCreatingProject || !newProjectName.trim()}
+                          className="px-4 py-2.5 rounded-lg bg-sam-accent text-sam-bg font-medium text-sm hover:bg-sam-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                          {isCreatingProject ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Creating
+                            </>
+                          ) : (
+                            'Create'
+                          )}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -2581,6 +2869,8 @@ export default function SelectVMPage() {
                     </div>
                   </div>
                 )}
+                  </>
+                )}
 
                 {/* Deployment Progress */}
                 {deploymentProgress && (
@@ -2636,7 +2926,7 @@ export default function SelectVMPage() {
                 </button>
                 <button
                   onClick={handleDeployTemplate}
-                  disabled={isDeployingTemplate || isLoadingProjectsForTemplate || !templateAgentName.trim() || !selectedTemplateProject}
+                  disabled={isDeployingTemplate || isLoadingProjectsForTemplate || isValidatingKey || !templateAgentName.trim() || !selectedTemplateProject || (!credentials?.hasOrgoApiKey && !keyValidated)}
                   className="px-5 py-2.5 rounded-lg bg-sam-accent text-sam-bg font-medium text-sm hover:bg-sam-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {isDeployingTemplate ? (
@@ -2648,6 +2938,11 @@ export default function SelectVMPage() {
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Loading...
+                    </>
+                  ) : isValidatingKey ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Validating...
                     </>
                   ) : (
                     <>
@@ -2770,6 +3065,186 @@ export default function SelectVMPage() {
                     Open VM
                   </button>
                 </motion.div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Create Template Modal */}
+      <AnimatePresence>
+        {showCreateTemplateModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={closeCreateTemplateModal}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ duration: 0.2 }}
+              className="bg-sam-surface border border-sam-border rounded-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-6 border-b border-sam-border sticky top-0 bg-sam-surface z-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-sam-accent/10 flex items-center justify-center">
+                    <PenTool className="w-5 h-5 text-sam-accent" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-display font-semibold text-sam-text">
+                      Create Your Own Template
+                    </h2>
+                    <p className="text-xs text-sam-text-dim">
+                      Build a custom AI agent using natural language
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={closeCreateTemplateModal}
+                  className="p-2 rounded-lg hover:bg-sam-bg transition-colors text-sam-text-dim hover:text-sam-text"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-6">
+                {/* Template Ideas Section */}
+                <div className="space-y-3">
+                  <label className="text-sm font-medium text-sam-text flex items-center gap-2">
+                    <Lightbulb className="w-4 h-4 text-amber-400" />
+                    Quick Start Ideas
+                  </label>
+                  <p className="text-xs text-sam-text-dim">
+                    Click an idea to auto-fill the form, or create your own from scratch
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {templateIdeas.map((idea) => (
+                      <button
+                        key={idea.name}
+                        onClick={() => handleSelectTemplateIdea(idea)}
+                        className={`p-3 rounded-lg border text-left transition-all hover:border-sam-accent/50 hover:bg-sam-accent/5 ${
+                          newTemplateName === idea.name 
+                            ? 'border-sam-accent bg-sam-accent/10' 
+                            : 'border-sam-border'
+                        }`}
+                      >
+                        <div className="text-2xl mb-1">{idea.icon}</div>
+                        <div className="text-xs font-medium text-sam-text truncate">{idea.name}</div>
+                        <div className={`text-[9px] font-mono px-1 py-0.5 rounded inline-block mt-1 ${categoryConfig[idea.category]?.color || 'text-gray-400 bg-gray-400/10'}`}>
+                          {categoryConfig[idea.category]?.label || 'Other'}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Template Name */}
+                <div className="space-y-3">
+                  <label className="text-sm font-medium text-sam-text flex items-center gap-2">
+                    Template Name
+                    <span className="text-sam-error">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={newTemplateName}
+                    onChange={(e) => setNewTemplateName(e.target.value)}
+                    placeholder="e.g., Personal Assistant, Code Reviewer"
+                    className="w-full px-4 py-2.5 rounded-lg bg-sam-bg border border-sam-border focus:border-sam-accent focus:ring-1 focus:ring-sam-accent/30 transition-all text-sam-text placeholder:text-sam-text-dim/50 text-sm"
+                  />
+                </div>
+
+                {/* Description */}
+                <div className="space-y-3">
+                  <label className="text-sm font-medium text-sam-text flex items-center gap-2">
+                    Short Description
+                    <span className="text-sam-error">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={newTemplateDescription}
+                    onChange={(e) => setNewTemplateDescription(e.target.value)}
+                    placeholder="A brief description of what this agent does"
+                    className="w-full px-4 py-2.5 rounded-lg bg-sam-bg border border-sam-border focus:border-sam-accent focus:ring-1 focus:ring-sam-accent/30 transition-all text-sam-text placeholder:text-sam-text-dim/50 text-sm"
+                  />
+                </div>
+
+                {/* Natural Language Prompt */}
+                <div className="space-y-3">
+                  <label className="text-sm font-medium text-sam-text flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-sam-accent" />
+                    What should your agent do?
+                  </label>
+                  <textarea
+                    value={newTemplatePrompt}
+                    onChange={(e) => setNewTemplatePrompt(e.target.value)}
+                    placeholder="Describe in natural language what you want your AI agent to do. For example: 'Monitor my GitHub repositories and automatically respond to issues with suggested fixes. Prioritize security-related issues and send me daily summaries.'"
+                    rows={4}
+                    className="w-full px-4 py-2.5 rounded-lg bg-sam-bg border border-sam-border focus:border-sam-accent focus:ring-1 focus:ring-sam-accent/30 transition-all text-sam-text placeholder:text-sam-text-dim/50 text-sm resize-none"
+                  />
+                  <p className="text-xs text-sam-text-dim">
+                    Be as specific as possible. The more detail you provide, the better your agent will understand its role.
+                  </p>
+                </div>
+
+                {/* Info Box */}
+                <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/30">
+                  <div className="flex items-start gap-3">
+                    <Rocket className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-blue-400 font-medium text-sm">How it works</p>
+                      <p className="text-blue-400/80 text-xs mt-1">
+                        Your template will be added to the marketplace and can be deployed to any VM. 
+                        Other users can discover and use your template too!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Error Display */}
+                {createTemplateError && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="p-3 rounded-lg bg-sam-error/10 border border-sam-error/30 flex items-start gap-2"
+                  >
+                    <AlertCircle className="w-4 h-4 text-sam-error flex-shrink-0 mt-0.5" />
+                    <p className="text-sam-error text-sm">{createTemplateError}</p>
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-6 border-t border-sam-border flex justify-end gap-3 sticky bottom-0 bg-sam-surface">
+                <button
+                  onClick={closeCreateTemplateModal}
+                  disabled={isCreatingTemplate}
+                  className="px-5 py-2.5 rounded-lg border border-sam-border text-sam-text-dim hover:text-sam-text hover:border-sam-accent/50 font-medium text-sm transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateTemplate}
+                  disabled={isCreatingTemplate || !newTemplateName.trim() || !newTemplateDescription.trim()}
+                  className="px-5 py-2.5 rounded-lg bg-sam-accent text-sam-bg font-medium text-sm hover:bg-sam-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isCreatingTemplate ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      Create Template
+                    </>
+                  )}
+                </button>
               </div>
             </motion.div>
           </motion.div>

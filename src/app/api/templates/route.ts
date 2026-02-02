@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { getAllTemplates, type Template } from '@/lib/templates'
+import { prisma } from '@/lib/prisma'
+import { getAllTemplates, convertDbTemplate, TEMPLATE_IDEAS, type Template } from '@/lib/templates'
 
 /**
  * GET /api/templates - List all available templates
@@ -21,22 +22,33 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '100')
     const offset = parseInt(searchParams.get('offset') || '0')
     const category = searchParams.get('category') || undefined
+    const includeIdeas = searchParams.get('includeIdeas') === 'true'
 
     // Get built-in templates
-    let templates = getAllTemplates()
+    let templates: Template[] = getAllTemplates()
+    
+    // Get user-created templates from database
+    try {
+      const dbTemplates = await prisma.marketplaceTemplate.findMany({
+        where: { 
+          isPublic: true,
+          ...(category ? { category } : {}),
+        },
+        orderBy: { deployCount: 'desc' },
+      })
+      
+      // Convert and merge database templates
+      const userTemplates = dbTemplates.map(convertDbTemplate)
+      templates = [...templates, ...userTemplates]
+    } catch (dbError) {
+      console.warn('[Templates] Could not fetch database templates:', dbError)
+      // Continue with just built-in templates
+    }
     
     // Filter by category if specified
     if (category) {
       templates = templates.filter(t => t.category === category)
     }
-    
-    // TODO: Merge with user-uploaded templates from database
-    // This will be implemented when we enable user uploads
-    // const dbTemplates = await prisma.marketplaceTemplate.findMany({
-    //   where: { isPublic: true, isVerified: true, category: category || undefined },
-    //   orderBy: { deployCount: 'desc' },
-    // })
-    // templates = [...templates, ...convertDbTemplates(dbTemplates)]
     
     // Get total count before pagination
     const total = templates.length
@@ -44,8 +56,8 @@ export async function GET(request: NextRequest) {
     // Apply pagination
     const paginatedTemplates = templates.slice(offset, offset + limit)
     
-    // Return templates with pagination info
-    return NextResponse.json({
+    // Build response
+    const response: any = {
       templates: paginatedTemplates,
       pagination: {
         total,
@@ -53,7 +65,14 @@ export async function GET(request: NextRequest) {
         offset,
         hasMore: offset + limit < total
       }
-    })
+    }
+    
+    // Include template ideas if requested
+    if (includeIdeas) {
+      response.ideas = TEMPLATE_IDEAS
+    }
+    
+    return NextResponse.json(response)
   } catch (error) {
     console.error('[Templates] Error listing templates:', error)
     return NextResponse.json(
