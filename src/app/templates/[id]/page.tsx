@@ -26,7 +26,7 @@ import {
   Lightbulb
 } from 'lucide-react'
 import type { Template } from '@/lib/templates'
-import { TEMPLATE_IDEAS } from '@/lib/templates'
+import { TEMPLATE_IDEAS, isEmojiLogo } from '@/lib/templates'
 
 interface OrgoProject {
   id: string
@@ -433,11 +433,15 @@ export default function TemplatePage() {
             {/* Template Header */}
             <div className="flex items-start gap-6">
               <div className={`w-20 h-20 rounded-2xl ${catConfig.bgColor} flex items-center justify-center overflow-hidden flex-shrink-0`}>
-                <img
-                  src={template.logo}
-                  alt={template.name}
-                  className="w-14 h-14 object-contain"
-                />
+                {isEmojiLogo(template.logo) ? (
+                  <span className="text-5xl">{template.logo}</span>
+                ) : (
+                  <img
+                    src={template.logo}
+                    alt={template.name}
+                    className="w-14 h-14 object-contain"
+                  />
+                )}
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2 flex-wrap">
@@ -573,11 +577,15 @@ export default function TemplatePage() {
               <div className="flex items-center justify-between p-6 border-b border-sam-border sticky top-0 bg-sam-surface z-10">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-sam-bg flex items-center justify-center overflow-hidden">
-                    <img
-                      src={template.logo}
-                      alt={template.name}
-                      className="w-8 h-8 object-contain"
-                    />
+                    {isEmojiLogo(template.logo) ? (
+                      <span className="text-2xl">{template.logo}</span>
+                    ) : (
+                      <img
+                        src={template.logo}
+                        alt={template.name}
+                        className="w-8 h-8 object-contain"
+                      />
+                    )}
                   </div>
                   <div>
                     <h2 className="text-xl font-display font-semibold text-sam-text">

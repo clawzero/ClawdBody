@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Loader2, ArrowRight, CheckCircle2, LogOut, X, Key, FolderPlus, AlertCircle, ExternalLink, Globe, Server, Plus, Trash2, Play, Power, ArrowLeft, ExternalLinkIcon, Settings, Rocket, ChevronDown, ChevronUp, Sparkles, PenTool, User, Lightbulb, Share2, Link2, Check } from 'lucide-react'
 import type { Template, TemplateIdea } from '@/lib/templates'
-import { TEMPLATE_IDEAS } from '@/lib/templates'
+import { TEMPLATE_IDEAS, isEmojiLogo } from '@/lib/templates'
 
 type VMProvider = 'orgo' | 'e2b' | 'moltworker' | 'flyio' | 'aws' | 'railway' | 'digitalocean' | 'hetzner' | 'modal'
 
@@ -1388,14 +1388,25 @@ export default function SelectVMPage() {
                   {/* Template Logo and Info */}
                   <div className="flex items-start gap-4 mb-4">
                     <div className="w-12 h-12 rounded-xl bg-sam-bg flex items-center justify-center overflow-hidden flex-shrink-0">
-                      <img
-                        src={template.logo}
-                        alt={template.name}
-                        className="w-10 h-10 object-contain"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = '/logos/orgo.png'
-                        }}
-                      />
+                      {isEmojiLogo(template.logo) ? (
+                        <span className="text-3xl">{template.logo}</span>
+                      ) : (
+                        <img
+                          src={template.logo}
+                          alt={template.name}
+                          className="w-10 h-10 object-contain"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none'
+                            const parent = (e.target as HTMLImageElement).parentElement
+                            if (parent) {
+                              const emoji = document.createElement('span')
+                              emoji.className = 'text-3xl'
+                              emoji.textContent = '🤖'
+                              parent.appendChild(emoji)
+                            }
+                          }}
+                        />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -2641,11 +2652,15 @@ export default function SelectVMPage() {
               <div className="flex items-center justify-between p-6 border-b border-sam-border sticky top-0 bg-sam-surface z-10">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-sam-bg flex items-center justify-center overflow-hidden">
-                    <img
-                      src={selectedTemplate.logo}
-                      alt={selectedTemplate.name}
-                      className="w-8 h-8 object-contain"
-                    />
+                    {isEmojiLogo(selectedTemplate.logo) ? (
+                      <span className="text-2xl">{selectedTemplate.logo}</span>
+                    ) : (
+                      <img
+                        src={selectedTemplate.logo}
+                        alt={selectedTemplate.name}
+                        className="w-8 h-8 object-contain"
+                      />
+                    )}
                   </div>
                   <div>
                     <h2 className="text-xl font-display font-semibold text-sam-text">

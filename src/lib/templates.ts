@@ -43,7 +43,7 @@ export interface Template {
   id: string
   name: string
   description: string
-  logo: string                    // URL or /public path
+  logo: string                    // URL, /public path, or emoji
   category: TemplateCategory
   author?: string                 // For user-uploaded templates
   authorId?: string               // User ID of template creator (null for built-in)
@@ -218,6 +218,18 @@ export function generateTemplateId(name: string): string {
 }
 
 /**
+ * Check if a logo is an emoji (single character or emoji sequence)
+ */
+export function isEmojiLogo(logo: string): boolean {
+  // Emojis are typically 1-4 characters (including skin tones, ZWJ sequences)
+  // URLs/paths always start with / or http
+  if (!logo) return false
+  if (logo.startsWith('/') || logo.startsWith('http')) return false
+  // Simple check: if it's short and doesn't look like a path, it's probably an emoji
+  return logo.length <= 8 && !logo.includes('.')
+}
+
+/**
  * Convert a database template to the Template interface
  */
 export function convertDbTemplate(dbTemplate: any): Template {
@@ -225,7 +237,7 @@ export function convertDbTemplate(dbTemplate: any): Template {
     id: dbTemplate.templateId,
     name: dbTemplate.name,
     description: dbTemplate.description,
-    logo: dbTemplate.logo || '/logos/orgo.png',
+    logo: dbTemplate.logo || '🤖',  // Default to robot emoji if no logo
     category: dbTemplate.category as TemplateCategory,
     author: dbTemplate.authorName || 'Community',
     authorId: dbTemplate.authorId,

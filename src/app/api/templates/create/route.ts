@@ -20,6 +20,7 @@ interface CreateTemplateRequest {
 
 interface AIGeneratedTemplate {
   category: TemplateCategory
+  logo: string  // Emoji for the template
   skillContent: string
   heartbeatTasks: string[]
 }
@@ -45,9 +46,10 @@ async function generateTemplateWithAI(
   const systemPrompt = `You are an AI template generator for ClawdBody, a platform that deploys AI agents to virtual machines.
 
 Your task is to analyze a user's template request and generate:
-1. A category classification (exactly one of: "productivity", "social", "dev-tools", "other")
-2. A detailed SKILL.md file content that instructs the AI agent on how to perform its tasks
-3. A list of heartbeat tasks the agent should periodically check
+1. A single emoji that best represents this template (e.g., 📈 for trading, 🤖 for assistant, 📱 for social media)
+2. A category classification (exactly one of: "productivity", "social", "dev-tools", "other")
+3. A detailed SKILL.md file content that instructs the AI agent on how to perform its tasks
+4. A list of heartbeat tasks the agent should periodically check
 
 IMPORTANT: The SKILL.md should be practical and actionable. Include:
 - Clear purpose and goals
@@ -58,6 +60,7 @@ IMPORTANT: The SKILL.md should be practical and actionable. Include:
 
 Respond in JSON format only:
 {
+  "logo": "single emoji that represents this template",
   "category": "productivity" | "social" | "dev-tools" | "other",
   "skillContent": "Full markdown content for SKILL.md",
   "heartbeatTasks": ["Task 1 to check periodically", "Task 2", ...]
@@ -96,9 +99,13 @@ Generate a complete template configuration for this AI agent.`
     // Validate category
     const validCategories: TemplateCategory[] = ['social', 'productivity', 'dev-tools', 'other']
     const category = validCategories.includes(parsed.category) ? parsed.category : 'other'
+    
+    // Get logo emoji (default to a robot if not provided)
+    const logo = parsed.logo && typeof parsed.logo === 'string' ? parsed.logo : '🤖'
 
     return {
       category,
+      logo,
       skillContent: parsed.skillContent || generateBasicSkillContent(name, description, prompt),
       heartbeatTasks: Array.isArray(parsed.heartbeatTasks) ? parsed.heartbeatTasks : [
         'Check for new tasks and notifications',
@@ -109,6 +116,43 @@ Generate a complete template configuration for this AI agent.`
     console.error('[Templates] AI generation failed, using fallback:', error)
     return fallbackTemplateGeneration(name, description, prompt)
   }
+}
+
+/**
+ * Get a relevant emoji based on keywords in the template name and description
+ */
+function getEmojiForTemplate(name: string, description: string): string {
+  const combined = (name + ' ' + description).toLowerCase()
+  
+  // Check for specific keywords and return relevant emojis
+  if (combined.includes('stock') || combined.includes('trading') || combined.includes('crypto') || combined.includes('market')) return '📈'
+  if (combined.includes('assistant') || combined.includes('personal')) return '🤖'
+  if (combined.includes('social') || combined.includes('twitter') || combined.includes('x.com')) return '📱'
+  if (combined.includes('email') || combined.includes('mail')) return '📧'
+  if (combined.includes('calendar') || combined.includes('schedule')) return '📅'
+  if (combined.includes('code') || combined.includes('github') || combined.includes('review')) return '💻'
+  if (combined.includes('devops') || combined.includes('deploy') || combined.includes('infra')) return '🖥️'
+  if (combined.includes('monitor') || combined.includes('alert')) return '🔔'
+  if (combined.includes('research') || combined.includes('paper') || combined.includes('study')) return '📚'
+  if (combined.includes('write') || combined.includes('content') || combined.includes('blog')) return '✍️'
+  if (combined.includes('support') || combined.includes('customer') || combined.includes('help')) return '💬'
+  if (combined.includes('data') || combined.includes('analysis') || combined.includes('spreadsheet')) return '📊'
+  if (combined.includes('security') || combined.includes('audit') || combined.includes('scan')) return '🔒'
+  if (combined.includes('search') || combined.includes('find')) return '🔍'
+  if (combined.includes('automat') || combined.includes('workflow')) return '⚡'
+  if (combined.includes('news') || combined.includes('feed')) return '📰'
+  if (combined.includes('image') || combined.includes('photo') || combined.includes('visual')) return '🖼️'
+  if (combined.includes('video') || combined.includes('youtube')) return '🎬'
+  if (combined.includes('music') || combined.includes('audio') || combined.includes('sound')) return '🎵'
+  if (combined.includes('game') || combined.includes('play')) return '🎮'
+  if (combined.includes('health') || combined.includes('fitness') || combined.includes('medical')) return '🏥'
+  if (combined.includes('finance') || combined.includes('budget') || combined.includes('money')) return '💰'
+  if (combined.includes('travel') || combined.includes('trip') || combined.includes('flight')) return '✈️'
+  if (combined.includes('food') || combined.includes('recipe') || combined.includes('cook')) return '🍳'
+  if (combined.includes('shop') || combined.includes('ecommerce') || combined.includes('product')) return '🛒'
+  
+  // Default emoji
+  return '🤖'
 }
 
 /**
@@ -141,6 +185,7 @@ function fallbackTemplateGeneration(
 
   return {
     category,
+    logo: getEmojiForTemplate(name, description),
     skillContent: generateBasicSkillContent(name, description, prompt),
     heartbeatTasks: [
       'Check for new tasks and notifications',
@@ -273,6 +318,7 @@ SKILLEOF`,
         templateId,
         name,
         description,
+        logo: aiGenerated.logo,  // Save the emoji logo
         category: aiGenerated.category,
         authorId: session.user.id,
         authorName: session.user.name || 'Anonymous',
@@ -290,7 +336,7 @@ SKILLEOF`,
       id: dbTemplate.templateId,
       name: dbTemplate.name,
       description: dbTemplate.description,
-      logo: '/logos/orgo.png', // Default logo for user templates
+      logo: dbTemplate.logo || aiGenerated.logo,  // Use the emoji logo
       category: dbTemplate.category as TemplateCategory,
       author: dbTemplate.authorName || 'Anonymous',
       authorId: dbTemplate.authorId || undefined,
