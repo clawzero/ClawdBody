@@ -1567,7 +1567,8 @@ export default function SelectVMPage() {
                     </div>
                   )}
                   {/* Template Logo and Info */}
-                  <div className="flex items-start gap-4 mb-4">
+                  {/* Header with logo and name */}
+                  <div className="flex items-start gap-4 mb-4 pr-12">
                     <div className="w-12 h-12 rounded-xl bg-sam-bg flex items-center justify-center overflow-hidden flex-shrink-0">
                       {isEmojiLogo(template.logo) ? (
                         <span className="text-3xl">{template.logo}</span>
@@ -1599,6 +1600,11 @@ export default function SelectVMPage() {
                         <span className={`inline-block text-[10px] font-mono px-1.5 py-0.5 rounded ${categoryConfig[template.category]?.color || categoryConfig.other.color}`}>
                           {categoryConfig[template.category]?.label || 'Other'}
                         </span>
+                        {template.isUserCreated && (
+                          <span className="text-[10px] font-mono text-purple-400 bg-purple-400/10 px-1.5 py-0.5 rounded">
+                            Community
+                          </span>
+                        )}
                         {template.author && (
                           <span className="inline-flex items-center gap-1 text-[10px] font-mono text-sam-text-dim">
                             <User className="w-2.5 h-2.5" />
@@ -1635,13 +1641,8 @@ export default function SelectVMPage() {
                     )}
                   </div>
 
-                  {/* Top-right actions: Community badge, share, delete */}
+                  {/* Top-right actions: share, delete */}
                   <div className="absolute top-3 right-3 flex items-center gap-2">
-                    {template.isUserCreated && (
-                      <span className="text-[9px] font-mono text-purple-400 bg-purple-400/10 px-1.5 py-0.5 rounded">
-                        Community
-                      </span>
-                    )}
                     {/* Share button */}
                     <button
                       onClick={(e) => handleShareTemplate(e, template.id)}
