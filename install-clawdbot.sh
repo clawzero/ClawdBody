@@ -395,6 +395,9 @@ log_success "Clawdbot configured!"
 
 log_info "Step 6: Setting up environment..."
 
+# First, remove any existing Clawdbot configuration to prevent duplicates
+run_on_vm "$COMPUTER_ID" "sed -i '/^# Clawdbot configuration$/,/^export \(TELEGRAM_BOT_TOKEN\|DISCORD_BOT_TOKEN\|ANTHROPIC_API_KEY\)=/d' ~/.bashrc 2>/dev/null || true" > /dev/null
+
 # Create startup environment
 BASHRC_ADDITIONS="
 # Clawdbot configuration

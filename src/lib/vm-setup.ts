@@ -1114,6 +1114,12 @@ During heartbeat, check the following:
     )
 
     // Add environment variables to bashrc
+    // First, remove any existing Clawdbot configuration to prevent duplicates
+    await this.runCommand(
+      `sed -i '/^# Clawdbot configuration$/,/^export SAMANTHA_GATEWAY_TOKEN=/d' ~/.bashrc 2>/dev/null || true`,
+      'Remove existing Clawdbot config from bashrc'
+    )
+    
     const bashrcAdditions = `
 # Clawdbot configuration
 export NVM_DIR="\\$HOME/.nvm"

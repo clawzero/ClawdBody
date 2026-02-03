@@ -565,6 +565,12 @@ Your workspace is at /home/ubuntu/clawd.
     }
 
     // Add environment variables to bashrc
+    // First, remove any existing Clawdbot configuration to prevent duplicates
+    await this.runCommand(
+      `sed -i '/^# Clawdbot configuration$/,/^export TELEGRAM_BOT_TOKEN=/d' ~/.bashrc 2>/dev/null || true`,
+      'Remove existing Clawdbot config from bashrc'
+    )
+    
     const bashrcAdditions = `
 # Clawdbot configuration
 export NVM_DIR="\\$HOME/.nvm"

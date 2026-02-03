@@ -402,7 +402,13 @@ export SAMANTHA_API_URL='${apiBaseUrl}'
 export SAMANTHA_USER_ID='${userId || ''}'
 `
 
-    const currentBashrc = await this.e2bClient.readFile(this.sandbox, '/home/user/.bashrc').catch(() => '')
+    // Read current bashrc and remove any existing Clawdbot configuration to prevent duplicates
+    let currentBashrc = await this.e2bClient.readFile(this.sandbox, '/home/user/.bashrc').catch(() => '')
+    
+    // Remove existing Clawdbot configuration block
+    const clawdbotConfigRegex = /\n?# Clawdbot configuration[\s\S]*?export SAMANTHA_USER_ID='[^']*'\n?/g
+    currentBashrc = currentBashrc.replace(clawdbotConfigRegex, '\n')
+    
     await this.e2bClient.writeFile(this.sandbox, '/home/user/.bashrc', currentBashrc + bashrcAdditions)
 
     this.onProgress?.({
