@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { encrypt, decrypt } from '@/lib/encryption'
 import { detectProvider, getProviderById, getAmbiguousProviders, getSupportedProvidersText, getKeyFormatsHelp, LLM_PROVIDERS } from '@/lib/llm-providers'
+import { OrgoClient } from '@/lib/orgo'
+import { VMSetup } from '@/lib/vm-setup'
 
 /**
  * GET /api/setup/model-config
@@ -134,6 +136,16 @@ export async function PUT(request: NextRequest) {
       llmModel: finalModel,
     }
 
+    // Get current setup state to check for VM
+    const setupState = await prisma.setupState.findUnique({
+      where: { userId: session.user.id },
+      select: { 
+        orgoApiKey: true, 
+        orgoComputerId: true, 
+        vmProvider: true,
+      },
+    })
+
     await prisma.setupState.upsert({
       where: { userId: session.user.id },
       update: updateData,
@@ -143,6 +155,24 @@ export async function PUT(request: NextRequest) {
         status: 'pending',
       },
     })
+
+    // Also sync the API key to the VM's .bashrc (for Orgo VMs)
+    // This is done async and non-blocking so the API response is fast
+    if (setupState?.vmProvider === 'orgo' && setupState.orgoApiKey && setupState.orgoComputerId) {
+      const syncToVM = async () => {
+        try {
+          const orgoApiKey = decrypt(setupState.orgoApiKey!)
+          const orgoClient = new OrgoClient(orgoApiKey)
+          const vmSetup = new VMSetup(orgoClient, setupState.orgoComputerId!)
+          await vmSetup.storeApiKey(trimmedKey, finalProvider.id)
+          console.log(`[model-config] Synced API key to VM ${setupState.orgoComputerId}`)
+        } catch (err) {
+          console.error('[model-config] Failed to sync API key to VM:', err)
+        }
+      }
+      // Don't await - sync happens in background
+      syncToVM()
+    }
 
     // Mask the key for response
     const maskedKey = trimmedKey.length > 16
@@ -155,6 +185,7 @@ export async function PUT(request: NextRequest) {
       providerName: finalProvider.name,
       model: finalModel,
       maskedKey,
+      vmSyncInitiated: !!(setupState?.vmProvider === 'orgo' && setupState.orgoComputerId),
     })
 
   } catch (error) {

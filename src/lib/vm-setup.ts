@@ -842,29 +842,28 @@ echo "INSTALL_COMPLETE" >> /tmp/clawdbot-install.log
   }
 
   /**
-   * Configure Clawdbot with Telegram channel and autonomous task execution
-   * Sets up heartbeat for periodic knowledge checks and task inference
-   *
-   * Note: System prompt is configured via CLAUDE.md file in workspace, not config
-   * Heartbeat config goes under agents.defaults.heartbeat (not root level)
+   * Basic Clawdbot setup - creates directories, config, and workspace files
+   * This runs for ALL VMs, regardless of whether Telegram is configured
+   * 
+   * Sets up:
+   * - ~/.clawdbot directory and config file
+   * - /home/user/clawd workspace with CLAUDE.md and HEARTBEAT.md
+   * - Communication helper script
+   * - API key in .bashrc
    */
-  async setupClawdbotTelegram(options: {
+  async setupClawdbotBasic(options: {
     llmApiKey: string
     llmProvider: string
     llmModel: string
-    telegramBotToken: string
-    telegramUserId?: string
     clawdbotVersion?: string
     heartbeatIntervalMinutes?: number
     userId?: string
     apiBaseUrl?: string
-  }): Promise<boolean> {
+  }): Promise<{ success: boolean; gatewayToken: string }> {
     const {
       llmApiKey,
       llmProvider,
       llmModel,
-      telegramBotToken,
-      telegramUserId,
       clawdbotVersion = '2026.1.22',
       heartbeatIntervalMinutes = 30,
       userId,
@@ -891,9 +890,6 @@ echo "INSTALL_COMPLETE" >> /tmp/clawdbot-install.log
       'Generate gateway token'
     )
     const gatewayToken = tokenResult.output.trim() || 'fallback-token-' + Date.now()
-
-    // Build Telegram allowFrom config
-    const allowFromJson = telegramUserId ? `"allowFrom": ["${telegramUserId}"],` : ''
 
     // Create CLAUDE.md file in workspace for system prompt (Clawdbot reads this automatically)
     const claudeMdContent = `# Samantha - Autonomous AI Assistant
@@ -1050,7 +1046,246 @@ During heartbeat, check the following:
       [provider.envVar]: llmApiKey
     }
 
-    // Create config JSON with heartbeat under agents.defaults (correct location)
+    // Create config JSON WITHOUT channels (basic setup)
+    const configJson = `{
+  "meta": {
+    "lastTouchedVersion": "${clawdbotVersion}"
+  },${Object.keys(envSection).length > 0 ? `
+  "env": ${JSON.stringify(envSection, null, 4).replace(/\n/g, '\n  ')},` : ''}
+  "auth": {
+    "profiles": ${JSON.stringify(authProfiles, null, 6).replace(/\n/g, '\n    ')}
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "/home/user/clawd",
+      "model": {
+        "primary": "${primaryModel}"
+      },
+      "compaction": {
+        "mode": "safeguard"
+      },
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      },
+      "heartbeat": {
+        "every": "${heartbeatIntervalMinutes}m",
+        "target": "last",
+        "activeHours": { "start": "00:00", "end": "24:00" },
+        "includeReasoning": true
+      }
+    }
+  },${modelsProviders ? `
+  "models": {
+    "mode": "merge",
+    "providers": ${JSON.stringify(modelsProviders, null, 6).replace(/\n/g, '\n    ')}
+  },` : ''}
+  "messages": {
+    "ackReactionScope": "group-mentions"
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto"
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "loopback",
+    "auth": {
+      "mode": "token",
+      "token": "${gatewayToken}"
+    }
+  }
+}`
+
+    // Write config using base64 to avoid escaping issues
+    const configB64 = Buffer.from(configJson).toString('base64')
+    const writeConfig = await this.runCommand(
+      `echo '${configB64}' | base64 -d > ~/.clawdbot/clawdbot.json`,
+      'Write Clawdbot config'
+    )
+
+    if (!writeConfig.success) {
+      return { success: false, gatewayToken }
+    }
+
+    // Create helper script for communication API
+    const helperScript = '#!/bin/bash\n' +
+      '# Communication API helper for Clawdbot\n' +
+      '# Usage: send_communication.sh <action> [options]\n' +
+      '\n' +
+      `API_URL="${apiBaseUrl}/api/integrations/clawdbot-communication"\n` +
+      `USER_ID="${userId || ''}"\n` +
+      `GATEWAY_TOKEN="${gatewayToken}"\n` +
+      '\n' +
+      'if [ -z "$USER_ID" ]; then\n' +
+      '  echo "Error: User ID not configured" >&2\n' +
+      '  exit 1\n' +
+      'fi\n' +
+      '\n' +
+      'ACTION="$1"\n' +
+      'shift\n' +
+      '\n' +
+      '# Build JSON payload from arguments\n' +
+      'JSON_ARGS=""\n' +
+      'while [ $# -gt 0 ]; do\n' +
+      '  KEY="$1"\n' +
+      '  shift\n' +
+      '  if [[ "$KEY" == --* ]]; then\n' +
+      '    KEY="${KEY#--}"\n' +
+      '    VALUE="$1"\n' +
+      '    shift\n' +
+      '    if [ -z "$JSON_ARGS" ]; then\n' +
+      '      JSON_ARGS="\\"$KEY\\": \\"$VALUE\\""\n' +
+      '    else\n' +
+      '      JSON_ARGS="$JSON_ARGS, \\"$KEY\\": \\"$VALUE\\""\n' +
+      '    fi\n' +
+      '  fi\n' +
+      'done\n' +
+      '\n' +
+      '# Create JSON payload\n' +
+      'PAYLOAD="{\\"action\\": \\"$ACTION\\", \\"gatewayToken\\": \\"$GATEWAY_TOKEN\\", \\"userId\\": \\"$USER_ID\\""\n' +
+      'if [ -n "$JSON_ARGS" ]; then\n' +
+      '  PAYLOAD="$PAYLOAD, $JSON_ARGS"\n' +
+      'fi\n' +
+      'PAYLOAD="$PAYLOAD}"\n' +
+      '\n' +
+      '# Make API request\n' +
+      `curl -s -X POST "$API_URL" \\\n` +
+      '  -H "Content-Type: application/json" \\\n' +
+      '  -d "$PAYLOAD"\n'
+
+    const helperScriptB64 = Buffer.from(helperScript).toString('base64')
+    await this.runCommand(
+      `echo '${helperScriptB64}' | base64 -d > /home/user/clawd/send_communication.sh && chmod +x /home/user/clawd/send_communication.sh`,
+      'Create communication helper script'
+    )
+
+    // Store API key in .bashrc (without Telegram-specific vars)
+    await this.storeApiKey(llmApiKey, llmProvider)
+
+    this.onProgress?.({
+      step: 'Setup Clawdbot',
+      message: 'Clawdbot workspace and config created',
+      success: true,
+    })
+
+    return { success: true, gatewayToken }
+  }
+
+  /**
+   * Configure Clawdbot with Telegram channel and start the gateway
+   * This should be called AFTER setupClawdbotBasic() has run
+   * 
+   * Updates the config to add Telegram channel and starts the gateway process
+   */
+  async setupClawdbotTelegram(options: {
+    llmApiKey: string
+    llmProvider: string
+    llmModel: string
+    telegramBotToken: string
+    telegramUserId?: string
+    clawdbotVersion?: string
+    heartbeatIntervalMinutes?: number
+    userId?: string
+    apiBaseUrl?: string
+  }): Promise<boolean> {
+    const {
+      llmApiKey,
+      llmProvider,
+      llmModel,
+      telegramBotToken,
+      telegramUserId,
+      clawdbotVersion = '2026.1.22',
+      heartbeatIntervalMinutes = 30,
+      userId,
+      apiBaseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+    } = options
+    
+    // Get provider config
+    const provider = LLM_PROVIDERS.find(p => p.id === llmProvider)
+    if (!provider) {
+      throw new Error(`Unknown LLM provider: ${llmProvider}`)
+    }
+
+    // Check if basic setup exists, if not run it first
+    const checkConfig = await this.runCommand(
+      'test -f ~/.clawdbot/clawdbot.json && echo "EXISTS" || echo "NOT_FOUND"',
+      'Check for existing config'
+    )
+    
+    let gatewayToken: string
+    
+    if (!checkConfig.output.includes('EXISTS')) {
+      // Basic setup hasn't been run, do it now
+      const basicResult = await this.setupClawdbotBasic({
+        llmApiKey,
+        llmProvider,
+        llmModel,
+        clawdbotVersion,
+        heartbeatIntervalMinutes,
+        userId,
+        apiBaseUrl,
+      })
+      if (!basicResult.success) {
+        return false
+      }
+      gatewayToken = basicResult.gatewayToken
+    } else {
+      // Get existing gateway token from config
+      const tokenResult = await this.runCommand(
+        "grep -o '\"token\": \"[^\"]*\"' ~/.clawdbot/clawdbot.json | tail -1 | cut -d'\"' -f4",
+        'Get existing gateway token'
+      )
+      gatewayToken = tokenResult.output.trim() || 'fallback-token-' + Date.now()
+    }
+
+    // Build Telegram allowFrom config
+    const allowFromJson = telegramUserId ? `"allowFrom": ["${telegramUserId}"],` : ''
+
+    // Build auth profile for the detected provider
+    const authProfiles: Record<string, any> = {
+      [`${provider.id}:default`]: {
+        provider: provider.id,
+        mode: 'api_key'
+      }
+    }
+    
+    // Build models.providers config for providers that need it
+    let modelsProviders: Record<string, any> | null = null
+    
+    if (provider.needsModelsProviders && provider.baseUrl) {
+      const modelId = llmModel.startsWith(`${provider.id}/`) 
+        ? llmModel.substring(provider.id.length + 1) 
+        : llmModel
+      
+      const providerConfig: Record<string, any> = {
+        baseUrl: provider.baseUrl,
+        apiKey: `\${${provider.envVar}}`,
+        api: 'openai-completions',
+        models: [
+          { id: modelId, name: modelId }
+        ]
+      }
+      
+      if (provider.id === 'openrouter') {
+        providerConfig.headers = {
+          'HTTP-Referer': 'https://clawdbody.com',
+          'X-Title': 'Clawdbot'
+        }
+      }
+      
+      modelsProviders = {
+        [provider.id]: providerConfig
+      }
+    }
+    
+    const primaryModel = llmModel
+    const envSection: Record<string, string> = {
+      [provider.envVar]: llmApiKey
+    }
+
+    // Create config JSON WITH Telegram channel
     const configJson = `{
   "meta": {
     "lastTouchedVersion": "${clawdbotVersion}"
@@ -1116,95 +1351,32 @@ During heartbeat, check the following:
   }
 }`
 
-    // Write config using base64 to avoid escaping issues
+    // Write updated config
     const configB64 = Buffer.from(configJson).toString('base64')
     const writeConfig = await this.runCommand(
       `echo '${configB64}' | base64 -d > ~/.clawdbot/clawdbot.json`,
-      'Write Clawdbot config'
+      'Write Clawdbot config with Telegram'
     )
 
     if (!writeConfig.success) {
       return false
     }
 
-    // Create helper script for communication API
-    const helperScript = '#!/bin/bash\n' +
-      '# Communication API helper for Clawdbot\n' +
-      '# Usage: send_communication.sh <action> [options]\n' +
-      '\n' +
-      `API_URL="${apiBaseUrl}/api/integrations/clawdbot-communication"\n` +
-      `USER_ID="${userId || ''}"\n` +
-      `GATEWAY_TOKEN="${gatewayToken}"\n` +
-      '\n' +
-      'if [ -z "$USER_ID" ]; then\n' +
-      '  echo "Error: User ID not configured" >&2\n' +
-      '  exit 1\n' +
-      'fi\n' +
-      '\n' +
-      'ACTION="$1"\n' +
-      'shift\n' +
-      '\n' +
-      '# Build JSON payload from arguments\n' +
-      'JSON_ARGS=""\n' +
-      'while [ $# -gt 0 ]; do\n' +
-      '  KEY="$1"\n' +
-      '  shift\n' +
-      '  if [[ "$KEY" == --* ]]; then\n' +
-      '    KEY="${KEY#--}"\n' +
-      '    VALUE="$1"\n' +
-      '    shift\n' +
-      '    if [ -z "$JSON_ARGS" ]; then\n' +
-      '      JSON_ARGS="\\"$KEY\\": \\"$VALUE\\""\n' +
-      '    else\n' +
-      '      JSON_ARGS="$JSON_ARGS, \\"$KEY\\": \\"$VALUE\\""\n' +
-      '    fi\n' +
-      '  fi\n' +
-      'done\n' +
-      '\n' +
-      '# Create JSON payload\n' +
-      'PAYLOAD="{\\"action\\": \\"$ACTION\\", \\"gatewayToken\\": \\"$GATEWAY_TOKEN\\", \\"userId\\": \\"$USER_ID\\""\n' +
-      'if [ -n "$JSON_ARGS" ]; then\n' +
-      '  PAYLOAD="$PAYLOAD, $JSON_ARGS"\n' +
-      'fi\n' +
-      'PAYLOAD="$PAYLOAD}"\n' +
-      '\n' +
-      '# Make API request\n' +
-      `curl -s -X POST "$API_URL" \\\n` +
-      '  -H "Content-Type: application/json" \\\n' +
-      '  -d "$PAYLOAD"\n'
-
-    const helperScriptB64 = Buffer.from(helperScript).toString('base64')
+    // Add Telegram-specific environment variables to bashrc
     await this.runCommand(
-      `echo '${helperScriptB64}' | base64 -d > /home/user/clawd/send_communication.sh && chmod +x /home/user/clawd/send_communication.sh`,
-      'Create communication helper script'
-    )
-
-    // Add environment variables to bashrc
-    // First, remove any existing Clawdbot configuration to prevent duplicates
-    await this.runCommand(
-      `sed -i '/^# Clawdbot configuration$/,/^export SAMANTHA_GATEWAY_TOKEN=/d' ~/.bashrc 2>/dev/null || true`,
-      'Remove existing Clawdbot config from bashrc'
+      `sed -i '/^export TELEGRAM_BOT_TOKEN=/d' ~/.bashrc 2>/dev/null || true`,
+      'Remove existing Telegram token from bashrc'
     )
     
-    // Build environment variable exports
-    const envExports: string[] = [
-      '# Clawdbot configuration',
-      'export NVM_DIR="\\$HOME/.nvm"',
-      '[ -s "\\$NVM_DIR/nvm.sh" ] && . "\\$NVM_DIR/nvm.sh"',
-      `export ${provider.envVar}='${llmApiKey}'`,
-      `export TELEGRAM_BOT_TOKEN='${telegramBotToken}'`,
-      `export SAMANTHA_API_URL='${apiBaseUrl}'`,
-      `export SAMANTHA_USER_ID='${userId || ''}'`,
-      `export SAMANTHA_GATEWAY_TOKEN='${gatewayToken}'`
-    ]
-    
-    const bashrcAdditions = '\n' + envExports.join('\n') + '\n'
-
     await this.runCommand(
-      `cat >> ~/.bashrc << 'BASHEOF'
-${bashrcAdditions}
-BASHEOF`,
-      'Configure environment'
+      `echo 'export TELEGRAM_BOT_TOKEN="${telegramBotToken}"' >> ~/.bashrc`,
+      'Add Telegram token to bashrc'
+    )
+
+    // Update communication helper script with gateway token if needed
+    await this.runCommand(
+      `sed -i 's/GATEWAY_TOKEN="[^"]*"/GATEWAY_TOKEN="${gatewayToken}"/' /home/user/clawd/send_communication.sh 2>/dev/null || true`,
+      'Update gateway token in helper script'
     )
 
     this.onProgress?.({
@@ -1566,6 +1738,39 @@ chmod +x ~/vault-sync-daemon.sh`,
       const message = error instanceof Error ? error.message : 'Unknown error'
       return { success: false, error: message }
     }
+  }
+
+  /**
+   * Store LLM API key in .bashrc for persistent access
+   * This ensures the API key is available for clawdbot commands via WebSocket
+   */
+  async storeApiKey(llmApiKey: string, llmProvider: string): Promise<boolean> {
+    // Get the provider config to determine the correct env var name
+    const provider = detectProvider(llmApiKey)
+    const providerById = LLM_PROVIDERS.find(p => p.id === llmProvider)
+    const envVarName = provider?.envVar || providerById?.envVar || 'ANTHROPIC_API_KEY'
+    
+    // First, remove any existing API key export to prevent duplicates
+    await this.runCommand(
+      `sed -i '/^export ${envVarName}=/d' ~/.bashrc 2>/dev/null || true`,
+      'Remove existing API key from bashrc'
+    )
+    
+    // Add the API key to bashrc
+    const result = await this.runCommand(
+      `echo 'export ${envVarName}="${llmApiKey}"' >> ~/.bashrc`,
+      'Store LLM API key'
+    )
+    
+    if (result.success) {
+      this.onProgress?.({
+        step: 'Store API key',
+        message: `${envVarName} stored in .bashrc`,
+        success: true,
+      })
+    }
+    
+    return result.success
   }
 
   /**

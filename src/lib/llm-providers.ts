@@ -25,7 +25,7 @@ export const LLM_PROVIDERS: LLMProvider[] = [
     id: 'anthropic',
     name: 'Anthropic (Claude)',
     envVar: 'ANTHROPIC_API_KEY',
-    defaultModel: 'anthropic/claude-sonnet-4',
+    defaultModel: 'anthropic/claude-sonnet-4-5',
     keyPrefix: ['sk-ant-'],
     needsModelsProviders: false,  // Built-in
   },

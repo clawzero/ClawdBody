@@ -481,6 +481,22 @@ async function runSetupProcess(
     }
     await updateStatus({ clawdbotInstalled: true })
 
+    // Always run basic Clawdbot setup - creates directories, config, and workspace
+    // This ensures web chat works immediately, even without Telegram configured
+    console.log(`[Setup ${vmId || userId}] Running basic Clawdbot setup...`)
+    const basicSetupResult = await vmSetup.setupClawdbotBasic({
+      llmApiKey,
+      llmProvider,
+      llmModel,
+      clawdbotVersion: clawdbotResult.version,
+      heartbeatIntervalMinutes: 30,
+      userId,
+      apiBaseUrl: process.env.NEXTAUTH_URL || 'http://localhost:3000',
+    })
+    if (!basicSetupResult.success) {
+      console.log(`[Setup ${vmId || userId}] Warning: Basic Clawdbot setup failed`)
+    }
+
     // Configure Clawdbot with Telegram if token is provided (from UI or env)
     const finalTelegramToken = telegramBotToken || process.env.TELEGRAM_BOT_TOKEN
     const finalTelegramUserId = telegramUserId || process.env.TELEGRAM_USER_ID
