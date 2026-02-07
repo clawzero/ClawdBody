@@ -407,7 +407,8 @@ async function runSetupProcess(
               // Wait a bit and check if computer exists
               await new Promise(resolve => setTimeout(resolve, 5000))
               const computers = await orgoClient.listComputers(project.name || projectName)
-              const existingComputer = computers.find(c => c.name === computerName)
+              // Find computer that starts with desiredComputerName (since createComputerWithUniqueName may have appended a suffix)
+              const existingComputer = computers.find(c => c.name === desiredComputerName || c.name.startsWith(desiredComputerName + '-'))
               if (existingComputer) {
                 computer = existingComputer
                 break

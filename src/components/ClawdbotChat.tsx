@@ -40,6 +40,7 @@ export function ClawdbotChat({ vmId, className = '', vmCreatedAt, onMigrate }: C
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [isClearing, setIsClearing] = useState(false)
   const [wsConnected, setWsConnected] = useState(false)
+  const [wsConnectionError, setWsConnectionError] = useState<string | null>(null)
   const [vmInfo, setVmInfo] = useState<VMInfo | null>(null)
   const [isMigrating, setIsMigrating] = useState(false)
   
@@ -98,20 +99,55 @@ export function ClawdbotChat({ vmId, className = '', vmCreatedAt, onMigrate }: C
 
     try {
       // Step 1: Get the VNC password (which is used as the token)
-      const passwordResponse = await fetch(`/api/setup/vnc-password?vmId=${vmId}`)
-      if (!passwordResponse.ok) {
-        const errorData = await passwordResponse.json().catch(() => ({ error: 'Failed to get VNC password' }))
-        console.error('[ClawdbotChat] Failed to get VNC password:', errorData.error)
+      let passwordResponse: Response
+      try {
+        passwordResponse = await fetch(`/api/setup/vnc-password?vmId=${vmId}`)
+      } catch (fetchError) {
+        // Network error or fetch failed
+        const errorMsg = 'Failed to connect to server. Please check your internet connection.'
+        console.error('[ClawdbotChat] Failed to fetch VNC password:', fetchError)
         setWsConnected(false)
+        setWsConnectionError(errorMsg)
         return
       }
 
-      const { password } = await passwordResponse.json()
-      if (!password) {
-        console.error('[ClawdbotChat] VNC password not returned')
+      if (!passwordResponse.ok) {
+        let errorMessage = 'Failed to get VNC password'
+        try {
+          const errorData = await passwordResponse.json()
+          errorMessage = errorData.error || errorMessage
+        } catch {
+          // If JSON parsing fails, use status text
+          errorMessage = passwordResponse.statusText || errorMessage
+        }
+        console.error('[ClawdbotChat] Failed to get VNC password:', errorMessage)
         setWsConnected(false)
+        setWsConnectionError(errorMessage)
         return
       }
+
+      let passwordData: { password?: string }
+      try {
+        passwordData = await passwordResponse.json()
+      } catch (parseError) {
+        const errorMsg = 'Invalid response from server'
+        console.error('[ClawdbotChat] Failed to parse VNC password response:', parseError)
+        setWsConnected(false)
+        setWsConnectionError(errorMsg)
+        return
+      }
+
+      const { password } = passwordData
+      if (!password) {
+        const errorMsg = 'VNC password not returned from server'
+        console.error('[ClawdbotChat] VNC password not returned')
+        setWsConnected(false)
+        setWsConnectionError(errorMsg)
+        return
+      }
+
+      // Clear any previous connection errors
+      setWsConnectionError(null)
 
       // Step 2: Connect with password as token
       // WebSocket URL uses the computer ID as subdomain with 'orgo-' prefix
@@ -127,6 +163,7 @@ export function ClawdbotChat({ vmId, className = '', vmCreatedAt, onMigrate }: C
 
       ws.onopen = () => {
         setWsConnected(true)
+        setWsConnectionError(null) // Clear any previous errors
         // Start heartbeat
         pingIntervalRef.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
@@ -180,6 +217,7 @@ export function ClawdbotChat({ vmId, className = '', vmCreatedAt, onMigrate }: C
 
       ws.onerror = () => {
         setWsConnected(false)
+        setWsConnectionError('WebSocket connection error occurred')
       }
 
       ws.onclose = (event) => {
@@ -198,13 +236,17 @@ export function ClawdbotChat({ vmId, className = '', vmCreatedAt, onMigrate }: C
             }
           }, 5000)
         } else {
+          const errorMsg = 'Authentication failed. Please try reconnecting.'
           console.error('[ClawdbotChat] Authentication failed (4401). Token may be invalid.')
+          setWsConnectionError(errorMsg)
         }
       }
 
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to connect to terminal'
       console.error('Failed to connect WebSocket:', err)
       setWsConnected(false)
+      setWsConnectionError(errorMsg)
     }
   }, [vmInfo, vmId])
 
@@ -444,20 +486,37 @@ export function ClawdbotChat({ vmId, className = '', vmCreatedAt, onMigrate }: C
         response = await sendViaWebSocket(userMessage.content, currentSessionId)
       } else {
         // Fall back to API route for non-Orgo or if WebSocket not connected
-        const apiResponse = await fetch('/api/chat/clawdbot', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: userMessage.content,
-            vmId,
-            sessionId: currentSessionId,
-          }),
-        })
+        // If WebSocket connection failed, log it but still try API
+        if (vmInfo?.provider === 'orgo' && wsConnectionError) {
+          console.warn('[ClawdbotChat] WebSocket not connected, falling back to API:', wsConnectionError)
+        }
+        // Fall back to API route for non-Orgo or if WebSocket not connected
+        let apiResponse: Response
+        try {
+          apiResponse = await fetch('/api/chat/clawdbot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: userMessage.content,
+              vmId,
+              sessionId: currentSessionId,
+            }),
+          })
+        } catch (fetchError) {
+          // Network error
+          throw new Error('Failed to connect to server. Please check your internet connection and try again.')
+        }
 
-        const data = await apiResponse.json()
+        let data: any
+        try {
+          data = await apiResponse.json()
+        } catch (parseError) {
+          // Response is not JSON
+          throw new Error(`Server error (${apiResponse.status}): ${apiResponse.statusText || 'Invalid response'}`)
+        }
 
         if (!apiResponse.ok) {
-          throw new Error(data.error || 'Failed to send message')
+          throw new Error(data.error || `Server error: ${apiResponse.statusText || 'Unknown error'}`)
         }
 
         if (data.sessionId) {
@@ -597,6 +656,13 @@ export function ClawdbotChat({ vmId, className = '', vmCreatedAt, onMigrate }: C
             <>
               <Wifi className="w-3 h-3 text-green-500" />
               <span className="text-xs text-green-500">Connected</span>
+            </>
+          ) : wsConnectionError ? (
+            <>
+              <WifiOff className="w-3 h-3 text-red-500" />
+              <span className="text-xs text-red-500" title={wsConnectionError}>
+                Connection Failed
+              </span>
             </>
           ) : (
             <>
