@@ -32,8 +32,9 @@ export async function GET(req: NextRequest) {
 
     // Check if subscription is scheduled for cancellation
     const isCancelling = subscription.cancel_at_period_end || false
-    const periodEndDate = subscription.current_period_end 
-      ? new Date(subscription.current_period_end * 1000).toISOString()
+    // cancel_at is populated by Stripe when cancel_at_period_end is set to true
+    const periodEndDate = subscription.cancel_at 
+      ? new Date(subscription.cancel_at * 1000).toISOString()
       : null
 
     return NextResponse.json({ 

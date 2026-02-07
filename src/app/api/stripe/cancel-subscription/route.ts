@@ -30,7 +30,10 @@ export async function POST(req: NextRequest) {
     })
 
     // Get the period end date (when subscription will actually end)
-    const periodEndDate = new Date(subscription.current_period_end * 1000)
+    // cancel_at is populated by Stripe when cancel_at_period_end is set to true
+    const periodEndDate = subscription.cancel_at
+      ? new Date(subscription.cancel_at * 1000)
+      : new Date()
 
     return NextResponse.json({ 
       success: true,

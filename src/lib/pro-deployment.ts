@@ -109,8 +109,7 @@ export async function deployProVM({ userId, name, templateId, agentName }: Deplo
 
         // 4. Trigger setup process directly (same as /api/setup/start does)
         // Import and call runAWSSetupProcess directly with decrypted credentials
-        const setupModule = await import('@/app/api/setup/start/route')
-        const runAWSSetupProcess = setupModule.runAWSSetupProcess
+        const { runAWSSetupProcess } = await import('@/lib/aws-setup-process')
         
         // Decrypt credentials for setup process
         const decryptedAccessKeyId = decrypt(setupState.awsAccessKeyId!)
